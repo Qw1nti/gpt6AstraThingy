@@ -25,4 +25,4 @@ The detector has no network operations. The INTERNET permission is used solely b
 
 ## Verification status
 
-See VALIDATION.md for the actual checks completed in the creation environment. Do not treat the presence of CI configuration as a successful APK build.
+See the [validation record](validation.md) for completed build and model checks. Emulator and physical-device verification are pending.

@@ -1,0 +1,3 @@
+# Python-only model smoke test; these are not Android app dependencies.
+onnxruntime==1.21.0
+numpy==2.2.4

@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible build or app problem.
+body:
+  - type: input
+    id: build
+    attributes:
+      label: Commit or build-run URL
+      description: Identify the version you tested.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Android version and device/emulator, or computer OS and JDK for build failures.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Remove personal information and private image or browser content.

@@ -1,49 +1,15 @@
 #!/usr/bin/env python3
-"""Build a debug APK with Java 17+, Android SDK 35 and verified Gradle 8.11.1."""
+"""Build and lint with Java 17, SDK 35 and the checked-in Gradle wrapper."""
 from pathlib import Path
-import hashlib
 import os
 import shutil
 import subprocess
 import sys
-import urllib.request
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '8.11.1'
 
 def run(args):
     subprocess.run(args, cwd=ROOT, check=True)
-
-def gradle():
-    name = 'gradle.bat' if os.name == 'nt' else 'gradle'
-    home = ROOT / '.tools' / ('gradle-' + VERSION)
-    executable = home / 'bin' / name
-    if executable.exists():
-        return executable
-    tools = ROOT / '.tools'
-    tools.mkdir(exist_ok=True)
-    archive = tools / ('gradle-' + VERSION + '-bin.zip')
-    url = 'https://services.gradle.org/distributions/' + archive.name
-    print('Downloading Gradle ' + VERSION + ' from its official distribution service…', flush=True)
-    with urllib.request.urlopen(url + '.sha256', timeout=60) as response:
-        expected = response.read().decode().strip().split()[0]
-    with urllib.request.urlopen(url, timeout=180) as response, archive.open('wb') as out:
-        shutil.copyfileobj(response, out)
-    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if actual != expected:
-        archive.unlink()
-        raise RuntimeError('Gradle checksum mismatch')
-    with zipfile.ZipFile(archive) as z:
-        for entry in z.infolist():
-            path = (tools / entry.filename).resolve()
-            if tools.resolve() not in path.parents:
-                raise RuntimeError('Unsafe distribution path')
-        z.extractall(tools)
-    if os.name != 'nt':
-        executable.chmod(0o755)
-    archive.unlink()
-    return executable
 
 def main():
     if not shutil.which('java') or not shutil.which('javac'):
@@ -57,7 +23,8 @@ def main():
     os.environ['ANDROID_HOME'] = str(sdk)
     run([sys.executable, 'scripts/fetch_model.py'])
     run([sys.executable, 'scripts/test_core.py'])
-    run([str(gradle()), '--no-daemon', ':app:assembleDebug', ':app:lintDebug'])
+    wrapper = ROOT / ('gradlew.bat' if os.name == 'nt' else 'gradlew')
+    run([str(wrapper), '--no-daemon', ':app:assembleDebug', ':app:lintDebug'])
     output = ROOT / 'app/build/outputs/apk/debug/app-debug.apk'
     if not output.exists():
         raise RuntimeError('Gradle finished without producing the expected APK')

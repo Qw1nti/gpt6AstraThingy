@@ -1,0 +1,25 @@
+.gradle/
+.tools/
+.idea/
+*.iml
+local.properties
+**/build/
+.kotlin/
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
+.env
+.env.*
+!.env.example
+# Verified model assets are fetched at build time.
+app/src/main/assets/320n.onnx
+app/src/main/assets/model-origin.json
+app/src/main/assets/NUDENET-LICENSE.txt

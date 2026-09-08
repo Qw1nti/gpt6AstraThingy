@@ -2,7 +2,8 @@
 
 Use benign test images containing faces or hands/feet and enable the corresponding category. Synthetic style preview tests rendering only; it does not validate detection. Never use lack of boxes as proof that content is safe.
 
-- [ ] Build and Android lint finish successfully; install APK on Android 15 or 16.
+- [x] Build and Android lint finish successfully (see [validation record](validation.md)).
+- [ ] Install and launch the APK on Android 15 or newer.
 - [ ] Launch with model bundled, airplane mode on. Open a benign local photo; enable face detection and verify boxes. Compare with the upstream detector on the same image.
 - [ ] Deny overlay access; verify no session starts and the instruction is clear.
 - [ ] Deny notification permission; capture can still be stopped from Veil/system indicator.
