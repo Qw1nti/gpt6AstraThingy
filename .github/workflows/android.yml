@@ -1,0 +1,58 @@
+name: Build and test Android
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: VeilAndroid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Test detection geometry
+        run: python scripts/test_core.py
+      - name: Fetch verified detector
+        run: python scripts/fetch_model.py
+      - name: Verify ONNX model contract
+        run: |
+          python -m pip install onnxruntime==1.21.0 numpy==2.2.4
+          python scripts/check_model.py
+      - name: Compile debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Android lint
+        run: gradle --no-daemon :app:lintDebug
+      - name: Upload debug APK
+        if: ${{ !cancelled() && hashFiles('VeilAndroid/app/build/outputs/apk/debug/app-debug.apk') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Veil-Android-debug-APK
+          path: VeilAndroid/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload lint reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-lint-reports
+          path: VeilAndroid/app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
