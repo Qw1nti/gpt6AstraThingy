@@ -28,8 +28,14 @@ final class Detector implements AutoCloseable {
         }
         input=session.getInputNames().iterator().next();
         TensorInfo info=(TensorInfo)session.getInputInfo().get(input).getInfo();
-        if(!Arrays.equals(info.getShape(),new long[]{1,3,320,320})) {
-            session.close(); throw new IllegalArgumentException("Unexpected detector input dimensions");
+        long[] shape=info.getShape(), expected={1,3,320,320};
+        // ONNX uses -1 for symbolic dimensions; the supplied tensor stays fixed at 320x320.
+        boolean compatible=info.type==OnnxJavaType.FLOAT && shape.length==expected.length;
+        if(compatible) for(int i=0;i<shape.length;i++) {
+            if(shape[i]!=-1 && shape[i]!=expected[i]) { compatible=false; break; }
+        }
+        if(!compatible) {
+            session.close(); throw new IllegalArgumentException("Unexpected detector input contract: "+info.type+" "+Arrays.toString(shape));
         }
     }
     List<DetectionCore.Box> detect(Bitmap source, Prefs prefs) throws Exception {

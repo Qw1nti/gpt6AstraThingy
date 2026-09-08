@@ -111,7 +111,10 @@ public final class MainActivity extends Activity {
     private void preview(){
         MaskView demo=new MaskView(this);demo.update(java.util.List.of(new DetectionCore.Box(25,20,75,80,.95f,3)),100,100);
         demo.setBackgroundColor(0xFF747080);
-        new AlertDialog.Builder(this).setTitle("Style preview · simulated region").setView(demo,16,16,16,16).setPositiveButton("Done",null).show().getWindow().setLayout(Ui.dp(this,320),Ui.dp(this,290));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Style preview · simulated region").setPositiveButton("Done",null).create();
+        dialog.setView(demo,16,16,16,16);
+        dialog.show();
+        dialog.getWindow().setLayout(Ui.dp(this,320),Ui.dp(this,290));
     }
     private void begin(){
         if(prefs.mask()==0){Ui.message(this,"Choose at least one detection category first.");return;}
