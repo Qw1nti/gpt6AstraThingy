@@ -62,7 +62,9 @@ public final class PhotoActivity extends Activity {
                 Prefs prefs=new Prefs(this); List<DetectionCore.Box> boxes=detector.detect(decoded,prefs);
                 result=decoded.copy(Bitmap.Config.ARGB_8888,true);
                 Canvas canvas=new Canvas(result); Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-                for(DetectionCore.Box box:MaskRegions.resolve(boxes,result.getWidth(),result.getHeight(),prefs.invert())) MaskView.drawMask(canvas,new RectF(box.left,box.top,box.right,box.bottom),prefs,paint);
+                Bitmap pixels=MaskView.pixelate(decoded,prefs),custom=prefs.style()==4?CustomMaskImage.load(this):null;
+                for(DetectionCore.Box box:MaskRegions.resolve(boxes,result.getWidth(),result.getHeight(),prefs.invert())) MaskView.drawMask(canvas,new RectF(box.left,box.top,box.right,box.bottom),box,result.getWidth(),result.getHeight(),prefs,paint,pixels,custom);
+                if(pixels!=null)pixels.recycle();
                 Bitmap ready=result; result=null;
                 main.post(()->{
                     if(destroyed) { ready.recycle(); return; }

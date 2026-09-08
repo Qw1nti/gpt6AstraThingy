@@ -22,6 +22,7 @@ public final class DetectionCore {
             left=l; top=t; right=r; bottom=b; score=s; category=c;
         }
         public Box expand(float ratio, int width, int height) {
+            ratio=Math.max(-.4f,Math.min(.7f,ratio));
             float dx=(right-left)*ratio, dy=(bottom-top)*ratio;
             return new Box(Math.max(0,left-dx),Math.max(0,top-dy),
                     Math.min(width,right+dx),Math.min(height,bottom+dy),score,category);
@@ -57,7 +58,6 @@ public final class DetectionCore {
             boolean suppress=false;
             for(Box prior:kept) if(prior.category==box.category && iou(prior,box)>.45f) { suppress=true; break; }
             if(!suppress) kept.add(box);
-            if(kept.size()==32) break;
         }
         return kept;
     }

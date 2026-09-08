@@ -22,23 +22,38 @@ public final class BrowserActivity extends Activity {
     private HandlerThread thread;
     private Handler worker;
     private Detector detector;
+    private final MotionTracker tracker=new MotionTracker();
+    private Bitmap browserFrame;
+    private Canvas frameCanvas;
     private boolean active,busy,destroyed,failed;
     private int generation;
+    private void nextScan(long started){
+        if(active&&!destroyed&&!failed){main.removeCallbacks(scan);main.postDelayed(scan,Math.max(0,prefs.interval()-(SystemClock.elapsedRealtime()-started)));}
+    }
     private final Runnable scan=new Runnable(){public void run(){
-        if(!active||destroyed||failed)return;
-        main.postDelayed(this,prefs.interval());
-        if(!prefs.enabled()){masks.clear();status.setText("AI detection is off");return;}
-        if(busy||web==null||web.getWidth()==0||web.getHeight()==0)return;
-        busy=true;int token=generation;
-        float scale=Math.min(1f,960f/Math.max(web.getWidth(),web.getHeight()));
-        Bitmap frame=Bitmap.createBitmap(Math.max(1,Math.round(web.getWidth()*scale)),Math.max(1,Math.round(web.getHeight()*scale)),Bitmap.Config.ARGB_8888);
-        final int width=frame.getWidth(),height=frame.getHeight();Canvas c=new Canvas(frame);c.scale(scale,scale);web.draw(c);
+        if(!active||destroyed||failed||busy)return;
+        if(!prefs.enabled()){masks.clear();tracker.clear();status.setText("AI detection is off");main.postDelayed(this,250);return;}
+        if(web==null||web.getWidth()==0||web.getHeight()==0){main.postDelayed(this,32);return;}
+        busy=true;int token=generation;long captured=SystemClock.elapsedRealtime();
+        float scale=Math.min(1f,640f/Math.max(web.getWidth(),web.getHeight()));
+        final int width=Math.max(1,Math.round(web.getWidth()*scale)),height=Math.max(1,Math.round(web.getHeight()*scale));
+        try{
+            if(browserFrame==null||browserFrame.getWidth()!=width||browserFrame.getHeight()!=height){
+                if(browserFrame!=null)browserFrame.recycle();
+                browserFrame=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);frameCanvas=new Canvas(browserFrame);
+            }
+            frameCanvas.drawColor(Color.BLACK);int save=frameCanvas.save();frameCanvas.scale(scale,scale);web.draw(frameCanvas);frameCanvas.restoreToCount(save);
+        }catch(RuntimeException e){busy=false;failed=true;masks.fillEntire();status.setText("Could not capture this page — reopen the browser");return;}
+        Bitmap frame=browserFrame;
         worker.post(()->{try{
             if(detector==null)detector=new Detector(BrowserActivity.this);
-            long start=SystemClock.elapsedRealtime();List<DetectionCore.Box> result=detector.detect(frame,prefs);long ms=SystemClock.elapsedRealtime()-start;
-            main.post(()->{busy=false;if(!destroyed&&active&&token==generation){masks.update(result,width,height);status.setText("AI active · "+result.size()+" regions · "+ms+" ms");}});
-        }catch(Exception e){main.post(()->{busy=false;if(destroyed)return;failed=true;status.setText("Filtering failed — reopen the browser");masks.fillEntire();});}
-        finally{frame.recycle();}});
+            List<DetectionCore.Box> result=detector.detect(frame,prefs);Bitmap pixels=MaskView.pixelate(frame,prefs);
+            long ms=SystemClock.elapsedRealtime()-captured;
+            main.post(()->{busy=false;if(!destroyed&&active&&token==generation){
+                tracker.update(result,width,height,captured);masks.update(tracker.snapshot(SystemClock.elapsedRealtime()),width,height,pixels);
+                status.setText("AI active · "+result.size()+" regions · "+ms+" ms");
+            }nextScan(captured);});
+        }catch(Exception e){main.post(()->{busy=false;if(destroyed)return;failed=true;status.setText("Filtering failed — reopen the browser");masks.fillEntire();});}});
     }};
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);prefs=new Prefs(this);thread=new HandlerThread("Veil browser detector");thread.start();worker=new Handler(thread.getLooper());
@@ -56,7 +71,7 @@ public final class BrowserActivity extends Activity {
         String[] labels={"Back","Reload","Tabs","Bookmarks"};Runnable[] actions={()->{if(web.canGoBack())web.goBack();},()->web.reload(),this::tabMenu,this::bookmarks};
         for(int i=0;i<labels.length;i++){Button b=Ui.button(this,labels[i],Ui.CARD,Ui.MUTED,actions[i]);b.setTextSize(11);b.setLetterSpacing(0);tools.addView(b,new LinearLayout.LayoutParams(0,Ui.dp(this,40),1));}root.addView(tools);
         viewport=new FrameLayout(this);masks=new MaskView(this);masks.setClickable(false);root.addView(viewport,new LinearLayout.LayoutParams(-1,0,1));
-        TextView caveat=Ui.text(this,"Page images only · video may be unfiltered",10,Ui.MUTED);caveat.setGravity(Gravity.CENTER);root.addView(caveat);
+        TextView caveat=Ui.text(this,"For video, use screen capture protection",10,Ui.MUTED);caveat.setGravity(Gravity.CENTER);root.addView(caveat);
         Ui.install(this,root);newTab();
     }
     @SuppressLint("SetJavaScriptEnabled")
@@ -64,6 +79,9 @@ public final class BrowserActivity extends Activity {
         WebView view=new WebView(this);view.setBackgroundColor(Ui.BG);
         WebSettings s=view.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setSafeBrowsingEnabled(true);s.setMediaPlaybackRequiresUserGesture(true);s.setSupportMultipleWindows(false);CookieManager.getInstance().setAcceptThirdPartyCookies(view,false);
         view.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(v==web&&(r-l!=or-ol||b-t!=ob-ot)){generation++;transitionMask();}});
+        view.setOnScrollChangeListener((v,x,y,oldX,oldY)->{if(v==web){
+            generation++;tracker.clear();if(failed||prefs.invert())masks.fillEntire();else masks.scroll(oldX-x,oldY-y);
+        }});
         view.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){return !"https".equalsIgnoreCase(request.getUrl().getScheme());}
             @Override public void onPageStarted(WebView v,String url,Bitmap icon){if(v==web){generation++;transitionMask();address.setText(url.contains("veil.invalid")?"":url);}}
@@ -71,7 +89,7 @@ public final class BrowserActivity extends Activity {
         view.setWebChromeClient(new WebChromeClient(){@Override public void onPermissionRequest(PermissionRequest r){r.deny();}});
         view.setDownloadListener((url,agent,disposition,mime,length)->Ui.message(this,"Use Export to select a local photo and save a censored copy. Direct browser downloads are not enabled."));return view;
     }
-    private void transitionMask(){if(failed)masks.fillEntire();else masks.clear();}
+    private void transitionMask(){tracker.clear();if(failed)masks.fillEntire();else masks.clear();}
     private void newTab(){
         if(tabs.size()>=4){Ui.message(this,"Four tabs are open. Close one before adding another.");return;}
         WebView next=createWeb();tabs.add(next);switchTab(next);
@@ -97,7 +115,7 @@ public final class BrowserActivity extends Activity {
         }).setNeutralButton("Clear saved",(d,n)->prefs.p.edit().remove("bookmarks").apply()).setNegativeButton("Close",null).show();
     }
     @Override protected void onResume(){super.onResume();active=true;if(web!=null)web.onResume();main.removeCallbacks(scan);main.post(scan);}
-    @Override protected void onPause(){active=false;generation++;main.removeCallbacks(scan);if(web!=null)web.onPause();super.onPause();}
+    @Override protected void onPause(){active=false;generation++;tracker.clear();main.removeCallbacks(scan);if(web!=null)web.onPause();super.onPause();}
     @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
-    @Override protected void onDestroy(){destroyed=true;active=false;generation++;main.removeCallbacks(scan);for(WebView v:tabs){v.stopLoading();v.destroy();}tabs.clear();worker.post(()->{if(detector!=null)try{detector.close();}catch(Exception ignored){}thread.quitSafely();});super.onDestroy();}
+    @Override protected void onDestroy(){destroyed=true;active=false;generation++;main.removeCallbacks(scan);viewport.removeAllViews();for(WebView v:tabs){v.stopLoading();v.destroy();}tabs.clear();worker.post(()->{if(browserFrame!=null){browserFrame.recycle();browserFrame=null;}if(detector!=null)try{detector.close();}catch(Exception ignored){}thread.quitSafely();});super.onDestroy();}
 }

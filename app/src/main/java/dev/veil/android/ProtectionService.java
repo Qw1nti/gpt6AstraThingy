@@ -11,7 +11,6 @@ import android.media.projection.*;
 import android.os.*;
 import android.provider.Settings;
 import android.view.WindowManager;
-import java.nio.ByteBuffer;
 import java.util.List;
 
 public final class ProtectionService extends Service {
@@ -22,6 +21,7 @@ public final class ProtectionService extends Service {
     private HandlerThread thread;
     private Handler worker;
     private Detector detector;
+    private final CaptureBuffer captureBuffer=new CaptureBuffer();
     private MediaProjection projection;
     private VirtualDisplay display;
     private ImageReader reader;
@@ -95,7 +95,7 @@ public final class ProtectionService extends Service {
     }
     /** Resize the existing virtual display, never create a second one with the same token. */
     private void resize(int w,int h) {
-        float scale=Math.min(1f,960f/Math.max(w,h));
+        float scale=Math.min(1f,640f/Math.max(w,h));
         int nextW=Math.max(1,Math.round(w*scale)),nextH=Math.max(1,Math.round(h*scale));
         if(reader!=null && captureW==nextW && captureH==nextH) return;
         ImageReader next=ImageReader.newInstance(nextW,nextH,PixelFormat.RGBA_8888,2);
@@ -110,31 +110,30 @@ public final class ProtectionService extends Service {
     }
     private void frame(ImageReader source) {
         if(closed || source!=reader) return;
-        Bitmap bitmap=null;
-        try(Image image=source.acquireLatestImage()) {
-            if(image==null) return;
-            long now=SystemClock.elapsedRealtime(); lastReceived=now;
-            if(!visible || detector==null || now-lastFrame<prefs.interval()) return;
-            lastFrame=now; int token=generation;
-            Image.Plane plane=image.getPlanes()[0];
-            ByteBuffer buffer=plane.getBuffer();
-            int width=image.getWidth(),height=image.getHeight();
-            int[] pixels=new int[width*height]; int base=buffer.position();
-            for(int y=0;y<height;y++) for(int x=0;x<width;x++) {
-                int i=base+y*plane.getRowStride()+x*plane.getPixelStride();
-                pixels[y*width+x]=0xFF000000|((buffer.get(i)&255)<<16)|((buffer.get(i+1)&255)<<8)|(buffer.get(i+2)&255);
+        Bitmap bitmap;
+        long captured;
+        int token,width,height;
+        try {
+            // Release the ImageReader buffer before inference so capture can keep producing frames.
+            try(Image image=source.acquireLatestImage()) {
+                if(image==null) return;
+                captured=SystemClock.elapsedRealtime(); lastReceived=captured;
+                if(!visible || detector==null || captured-lastFrame<prefs.interval()) return;
+                if(!prefs.enabled()) { main.post(()->overlays.clear()); return; }
+                lastFrame=captured; token=generation;
+                width=image.getWidth();height=image.getHeight();
+                bitmap=captureBuffer.copy(image);
             }
-            bitmap=Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
             List<DetectionCore.Box> boxes=detector.detect(bitmap,prefs);
-            lastMs=SystemClock.elapsedRealtime()-now; frames++;
+            Bitmap pixels=MaskView.pixelate(bitmap,prefs);
+            lastMs=SystemClock.elapsedRealtime()-captured; frames++;
             main.post(()->{
                 if(closed || !visible || token!=generation) return;
                 if(!Settings.canDrawOverlays(this)) { fail("Overlay permission was removed",null); return; }
-                try { overlays.show(boxes,width,height); status="Active · "+boxes.size()+" detections"+(prefs.style()==3?" · outline only":prefs.invert()?" · inverted":""); }
+                try { overlays.show(boxes,width,height,pixels,captured); status="Active · "+boxes.size()+" detections"+(boxes.size()>24?" · grouped":"")+(prefs.style()==3?" · outline only":prefs.invert()?" · inverted":""); }
                 catch(RuntimeException e) { fail("Could not display censor boxes",e); }
             });
         } catch(Exception e) { if(!closed) fail("Screen detection failed",e); }
-        finally { if(bitmap!=null) bitmap.recycle(); }
     }
     private void fail(String message,Exception error) {
         main.post(()->{ if(closed) return;
@@ -152,6 +151,7 @@ public final class ProtectionService extends Service {
             if(reader!=null) { reader.setOnImageAvailableListener(null,null); reader.close(); reader=null; }
             if(projection!=null) { projection.unregisterCallback(callback); projection.stop(); projection=null; }
             if(detector!=null) { try { detector.close(); } catch(Exception ignored) {} detector=null; }
+            captureBuffer.close();
             thread.quitSafely();
         });
         stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();

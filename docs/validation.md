@@ -36,3 +36,7 @@ The independent dense-scene probe retained only 32 of 36 disjoint valid detectio
 - Native screenshot comparison against the original app.
 
 The HTML design preview is not a native Android test. Follow the [device checklist](device-tests.md); report observed results rather than marking untested behavior as passed.
+
+## Version 0.3 follow-up
+
+The owner reports successful installation and basic operation on a phone, with choppy tracking on video and crowded scenes. Local regression suites now include 216 dense-scene, grouping, box-contraction and motion checks. Version 0.3 adds Android 15 instrumentation tests for pixelation/border rendering, opaque custom images, bounded private image import and reusable ImageReader buffer copying. Consult the commit's CI run for their actual result; phone performance and visual coverage still need retesting.

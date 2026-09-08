@@ -10,7 +10,11 @@ with tempfile.TemporaryDirectory(prefix='veil-tests-') as out:
     subprocess.run(compiler + ['-d', out,
         str(ROOT / 'app/src/main/java/dev/veil/android/DetectionCore.java'),
         str(ROOT / 'app/src/main/java/dev/veil/android/MaskRegions.java'),
+        str(ROOT / 'app/src/main/java/dev/veil/android/MotionTracker.java'),
+        str(ROOT / 'app/src/main/java/dev/veil/android/RegionGroups.java'),
         str(ROOT / 'tests/DetectionCoreTest.java'),
-        str(ROOT / 'tests/MaskRegionsTest.java')], check=True)
+        str(ROOT / 'tests/MaskRegionsTest.java'),
+        str(ROOT / 'tests/TrackingTest.java')], check=True)
     subprocess.run(['java', '-cp', out, 'dev.veil.android.DetectionCoreTest'], check=True)
     subprocess.run(['java', '-cp', out, 'dev.veil.android.MaskRegionsTest'], check=True)
+    subprocess.run(['java', '-cp', out, 'dev.veil.android.TrackingTest'], check=True)

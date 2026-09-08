@@ -41,3 +41,12 @@ Unmet cross-app alignment or self-capture checks block any claim of reliable cro
 - [ ] Open, switch and close four browser tabs. No stale inference results leak between tabs; inactive tabs pause.
 - [ ] Simulate inference failure, then navigate/switch tabs; the browser remains covered and reports failure.
 - [ ] Verify text scaling at 100%, 130% and 150%; no controls overlap or become unreachable.
+
+## Version 0.3 phone retest
+
+- [ ] Compare Ultra on the same video and categories as 0.2; record scan time, visible lag and heat.
+- [ ] Retest dense scenes; check both coverage and scrolling around grouped windows.
+- [ ] Move coverage below zero and verify smaller boxes in live capture and photo export.
+- [ ] Import a custom PNG/JPEG, restart the app, replace it and remove it.
+- [ ] Select Pixelated + border; verify real image blocks, border color, inverse mode and exported PNG pixels.
+- [ ] Check fast scrolling and sudden direction changes for prediction overshoot or stale masks.

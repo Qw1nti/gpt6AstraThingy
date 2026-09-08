@@ -8,7 +8,7 @@ This is an independent project inspired by [Beta Blocker Android](https://isla2d
 
 ## Status
 
-Version **0.2.0**. GitHub Actions has successfully built the debug APK, run Android lint, tested detection geometry and run three synthetic inferences with the actual model. Emulator and physical-device testing are still pending; a successful build does not establish filtering accuracy or visual parity. See the [validation record](docs/validation.md) and [known issues](docs/known-issues.md).
+Version **0.3.0**. GitHub Actions has successfully built the debug APK, run Android lint, tested detection geometry and run three synthetic inferences with the actual model. The 0.2 build was installed and tested by the owner on a phone; tracking choppiness was reported. Version 0.3 adds focused Android emulator rendering tests, and still needs phone verification for video smoothness and the new styles. A successful build does not establish filtering accuracy or visual parity. See the [validation record](docs/validation.md) and [known issues](docs/known-issues.md).
 
 ## Download a test build
 
@@ -74,12 +74,12 @@ python scripts/check_model.py
 
 On Windows, use `.venv\Scripts\python.exe` in place of `python` after creating the environment. Activation is optional.
 
-CI runs these checks plus APK compilation and Android lint on pushes to `main`/`master`, pull requests and manual runs. [Device checks](docs/device-tests.md) are maintained separately.
+CI runs these checks, APK compilation, Android lint and Android 15 emulator rendering tests on pushes to `main`/`master`, pull requests and manual runs. [Device checks](docs/device-tests.md) are maintained separately.
 
 ## Features and limits
 
 - Single-app capture with overlay masks and a notification stop action.
-- Solid, patterned, labeled and outline styles; inverse masking; adjustable categories, confidence and padding.
+- Solid, patterned, labeled, outline, custom-image and pixelated-with-border styles; inverse masking; adjustable categories, confidence and box shrinking/expansion.
 - HTTPS browser with up to four tabs and saved bookmarks.
 - Local photo selection, censor preview and PNG export.
 

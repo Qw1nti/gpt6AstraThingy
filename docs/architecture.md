@@ -26,3 +26,11 @@ The detector has no network operations. The INTERNET permission is used solely b
 ## Verification status
 
 See the [validation record](validation.md) for completed build and model checks. Emulator and physical-device verification are pending.
+
+## Version 0.3 rendering and capture
+
+Capture uses a worker-confined reusable RGBA buffer at up to 640 px on the longest edge; the detector still receives 320×320. ImageReader buffers close before inference. Ultra processes the newest frame without the former 100 ms minimum interval. Browser snapshots reuse their bitmap, and the next scan is scheduled after completion instead of busy-polling.
+
+`MotionTracker` associates same-category boxes, predicts short bounded motion and briefly retains missed detections. Up to 12 normal overlay groups can receive intermediate updates at 33 ms intervals during the 80 ms prediction horizon. Larger scenes update with detection results. `RegionGroups` batches scenes above 24 regions into at most 16 windows while keeping every original rectangle; only those rectangles are drawn, but transparent gaps inside a window consume touches. Inverse-region complexity still has its existing full-coverage fallback.
+
+`MaskView` shares custom-image and pixelation rendering between live masks and photo export. Pixelation holds only a coarse bitmap on the UI thread. Imported custom imagery is privately copied and bounded to 512 px; original frame data is not persisted automatically. Instrumentation tests check renderer pixels, image import and real RGBA ImageReader buffer copying on Android 15.
