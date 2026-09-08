@@ -23,7 +23,7 @@ Approximate design constants in `Ui.java`: 16 dp exterior/card padding, 15 dp ca
 - The model lacks an eye-only label; that original experimental checkbox is omitted. Some body-part categories are grouped differently.
 - Donation links and creator support destinations were not copied into this independent app.
 - The screenshot gallery does not expose all states or the complete Export interface, so unshown parts are independently designed.
-- This is a closer visual reconstruction, not a demonstrated pixel-identical clone. Android fonts, insets, controls, actual rendering and device behavior remain unverified.
+- This is a closer visual reconstruction, not a demonstrated pixel-identical clone. The owner has since supplied native phone screenshots and reports that version 0.3 works very well. Exact visual parity, accessibility and all folded/unfolded layouts have not been verified.
 
 ## Reference URLs
 
@@ -32,3 +32,7 @@ Approximate design constants in `Ui.java`: 16 dp exterior/card padding, 15 dp ca
 - Settings: https://img.itch.zone/aW1hZ2UvNDQxNDMxNi8yNzc4ODYxNy5wbmc=/original/dRc1q0.png
 - Browser: https://img.itch.zone/aW1hZ2UvNDQxNDMxNi8yNzc4ODYyMi5wbmc=/original/%2BDugwO.png
 - Help: https://img.itch.zone/aW1hZ2UvNDQxNDMxNi8yNzc4ODYyNC5wbmc=/original/mpQynt.png
+
+## Follow-up design proposals
+
+See the [0.3 improvement review](improvement-roadmap.md) for proposed simpler style controls, precise coverage adjustment, larger targets and an adaptive Fold layout. These are documented ideas; they have not changed the app or this historical reference comparison.

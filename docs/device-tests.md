@@ -1,4 +1,6 @@
-# Device acceptance checks — not yet executed
+# Device acceptance checklist
+
+Overall status: the owner reports that version 0.3 works very well. Individual scenarios below remain unchecked unless separately observed. The four emulator rendering tests are recorded in [validation](validation.md).
 
 Use benign test images containing faces or hands/feet and enable the corresponding category. Synthetic style preview tests rendering only; it does not validate detection. Never use lack of boxes as proof that content is safe.
 
@@ -28,7 +30,7 @@ Use benign test images containing faces or hands/feet and enable the correspondi
 
 Unmet cross-app alignment or self-capture checks block any claim of reliable cross-app filtering. Model benchmark comparison and APK/device tests are still required before production use.
 
-## Version 0.2 additional checks — not yet executed on Android
+## Additional UI and lifecycle scenarios — individual results pending
 
 - [ ] All five navigation tabs route correctly; Browser/Export do not accumulate duplicate activities.
 - [ ] Compare Home, Settings, Browser and Help against reference screenshots at 412 dp and on folded/unfolded screens.
@@ -42,7 +44,7 @@ Unmet cross-app alignment or self-capture checks block any claim of reliable cro
 - [ ] Simulate inference failure, then navigate/switch tabs; the browser remains covered and reports failure.
 - [ ] Verify text scaling at 100%, 130% and 150%; no controls overlap or become unreachable.
 
-## Version 0.3 phone retest
+## Version 0.3 targeted follow-up
 
 - [ ] Compare Ultra on the same video and categories as 0.2; record scan time, visible lag and heat.
 - [ ] Retest dense scenes; check both coverage and scrolling around grouped windows.

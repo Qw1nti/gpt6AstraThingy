@@ -24,11 +24,11 @@ The project now builds from the repository root using the standard Gradle wrappe
 
 The original source-only audit verified Java syntax, Python/XML/YAML parsing, geometry tests and rejection of tampered model bytes. Those checks could not establish an installable APK. Remote CI subsequently exposed and confirmed fixes for the dialog method and model-shape validation, superseding the earlier compilation limitation.
 
-The independent dense-scene probe retained only 32 of 36 disjoint valid detections. This remains a [known issue](known-issues.md).
+The independent dense-scene probe retained only 32 of 36 disjoint valid detections. Version 0.3 removed that cap, and the regression suite retains 100 disjoint detections. This historical probe is no longer an open cap defect.
 
 ## Pending runtime verification
 
-- Emulator or phone installation, launch and native UI interaction.
+- Complete native UI interaction coverage. Installation/basic operation are owner-reported, and four graphics/import tests passed on the Android emulator.
 - Android ONNX runtime loading and model preprocessing/accuracy comparison.
 - MediaProjection consent, overlays, alignment, scrolling, video and stop behavior.
 - Activity/process recreation, photo export, keyboard, rotation and fold/unfold.
@@ -37,6 +37,16 @@ The independent dense-scene probe retained only 32 of 36 disjoint valid detectio
 
 The HTML design preview is not a native Android test. Follow the [device checklist](device-tests.md); report observed results rather than marking untested behavior as passed.
 
-## Version 0.3 follow-up
+## Version 0.3 results and owner feedback
 
-The owner reports successful installation and basic operation on a phone, with choppy tracking on video and crowded scenes. Local regression suites now include 216 dense-scene, grouping, box-contraction and motion checks. Version 0.3 adds Android 15 instrumentation tests for pixelation/border rendering, opaque custom images, bounded private image import and reusable ImageReader buffer copying. Consult the commit's CI run for their actual result; phone performance and visual coverage still need retesting.
+[Commit 38144c5](https://github.com/Qw1nti/gpt6AstraThingy/commit/38144c59fd1b0543a647a6cd2a12ec8150f758e2) passed [CI run 34285010350](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/34285010350) on 8 September 2026. Both the APK job and Android rendering test job succeeded.
+
+- Existing detection and inverse-mask geometry suites passed.
+- All 216 dense-scene, grouping, box-contraction and motion checks passed.
+- Model download/checksum, input/output checks and synthetic inferences passed.
+- Debug APK compilation and Android lint passed.
+- All four Android 15 instrumentation tests passed: pixelation/border rendering, opaque custom-image backing, bounded private image import and reusable ImageReader buffer colors.
+
+The owner initially reported choppy tracking in 0.2. After installing 0.3, they reported: “It works very well now.” This supersedes the earlier request for an overall phone retest. It does not supply individual results for every style, fold/rotation transition, export operation or prolonged session. No new phone timing, battery or temperature measurements were provided.
+
+The [improvement review](improvement-roadmap.md) uses this successful baseline and separates measured checks, owner feedback, source risks and optional proposals. This follow-up reviewed existing CI results and source; it did not run another APK build or benchmark.

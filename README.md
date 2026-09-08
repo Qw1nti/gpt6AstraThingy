@@ -8,7 +8,7 @@ This is an independent project inspired by [Beta Blocker Android](https://isla2d
 
 ## Status
 
-Version **0.3.0**. GitHub Actions has successfully built the debug APK, run Android lint, tested detection geometry and run three synthetic inferences with the actual model. The 0.2 build was installed and tested by the owner on a phone; tracking choppiness was reported. Version 0.3 adds focused Android emulator rendering tests, and still needs phone verification for video smoothness and the new styles. A successful build does not establish filtering accuracy or visual parity. See the [validation record](docs/validation.md) and [known issues](docs/known-issues.md).
+Version **0.3.0**. The owner reports that the updated app works very well on their phone. [CI run 34285010350](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/34285010350) passed APK compilation, Android lint, geometry/tracking and model checks, plus all four Android 15 rendering tests. This establishes a working baseline; sustained performance, filtering accuracy and every device scenario have not been measured individually. See the [validation record](docs/validation.md), [known issues](docs/known-issues.md) and [recommended improvements](docs/improvement-roadmap.md). The improvement review contains proposals only; no further app changes are included.
 
 ## Download a test build
 
