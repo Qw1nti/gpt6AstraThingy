@@ -21,27 +21,27 @@ final class Ui {
     }
     static TextView text(Context c,String s,int size,int color){TextView t=new TextView(c);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(c,4),0,dp(c,4));return t;}
     static TextView title(Context c,String s){TextView t=text(c,s,22,TEXT);t.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));return t;}
-    static LinearLayout card(Context c){LinearLayout l=column(c);int p=dp(c,16);l.setPadding(p,p,p,p);l.setBackground(shape(c,CARD,0,15));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(c,12);l.setLayoutParams(lp);return l;}
+    static LinearLayout card(Context c){LinearLayout l=column(c);int p=dp(c,16);l.setPadding(p,p,p,p);l.setBackground(shape(c,CARD,0,20));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(c,12);l.setLayoutParams(lp);return l;}
     static Button button(Context c,String s,Runnable action){return button(c,s,PINK,BG,action);}
     static Button button(Context c,String s,int fill,int ink,Runnable action){
-        Button b=new Button(c);b.setText(s);b.setAllCaps(false);b.setTextColor(ink);b.setTextSize(16);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));b.setLetterSpacing(.06f);
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x337F7F7F),shape(c,fill,0,5),null));b.setMinHeight(dp(c,48));b.setMinimumWidth(0);b.setMinWidth(0);b.setPadding(dp(c,10),dp(c,8),dp(c,10),dp(c,8));b.setOnClickListener(v->action.run());
+        Button b=new Button(c);b.setText(s);b.setAllCaps(false);b.setTextColor(ink);b.setTextSize(16);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));b.setLetterSpacing(.025f);
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x337F7F7F),shape(c,fill,0,10),null));b.setMinHeight(dp(c,48));b.setMinimumWidth(0);b.setMinWidth(0);b.setPadding(dp(c,10),dp(c,8),dp(c,10),dp(c,8));b.setOnClickListener(v->action.run());
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(c,10);b.setLayoutParams(lp);return b;
     }
-    static Button outline(Context c,String s,Runnable action){Button b=button(c,s,Color.TRANSPARENT,GREEN,action);b.setBackground(shape(c,Color.TRANSPARENT,GREEN,5));return b;}
+    static Button outline(Context c,String s,Runnable action){Button b=button(c,s,Color.TRANSPARENT,GREEN,action);b.setBackground(shape(c,Color.TRANSPARENT,GREEN,10));return b;}
     static void gap(LinearLayout l,int size){View v=new View(l.getContext());l.addView(v,new LinearLayout.LayoutParams(1,dp(l.getContext(),size)));}
     static View navigation(Activity a,int selected,IntConsumer change){
-        LinearLayout row=new LinearLayout(a);row.setGravity(Gravity.CENTER_VERTICAL);row.setBackground(shape(a,CARD,0,14));
-        LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(-1,dp(a,68));outer.setMargins(dp(a,16),dp(a,16),dp(a,16),dp(a,20));row.setLayoutParams(outer);
+        LinearLayout row=new LinearLayout(a);row.setGravity(Gravity.CENTER_VERTICAL);row.setMinimumHeight(dp(a,72));row.setBackground(shape(a,CARD,0,14));
+        LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(-1,-2);outer.setMargins(dp(a,16),dp(a,16),dp(a,16),dp(a,20));row.setLayoutParams(outer);
         for(int i=0;i<TABS.length;i++){
             final int tab=i;LinearLayout item=column(a);item.setGravity(Gravity.CENTER);item.setPadding(0,dp(a,9),0,0);item.setContentDescription(TABS[i]);item.setFocusable(true);item.setClickable(true);item.setSelected(i==selected);item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22FF0095),null,null));
             item.addView(new Icon(a,i,i==selected?PINK:0xFF79727F),new LinearLayout.LayoutParams(dp(a,21),dp(a,21)));
-            TextView label=text(a,TABS[i],11,i==selected?TEXT:0xFF938A9B);label.setGravity(Gravity.CENTER);item.addView(label,new LinearLayout.LayoutParams(-1,dp(a,27)));
+            TextView label=text(a,TABS[i],12,i==selected?TEXT:0xFF938A9B);label.setGravity(Gravity.CENTER);item.addView(label,new LinearLayout.LayoutParams(-1,-2));
             View underline=new View(a);underline.setBackgroundColor(i==selected?PINK:Color.TRANSPARENT);item.addView(underline,new LinearLayout.LayoutParams(-1,dp(a,2)));
             item.setOnClickListener(v->change.accept(tab));row.addView(item,new LinearLayout.LayoutParams(0,-1,1));
         }return row;
     }
-    static CheckBox check(Context c,String label,boolean checked,java.util.function.Consumer<Boolean> action){CheckBox box=new CheckBox(c);box.setText(label);box.setTextSize(13);box.setTextColor(MUTED);box.setButtonTintList(ColorStateList.valueOf(PINK));box.setChecked(checked);box.setMinHeight(dp(c,40));box.setPadding(0,0,0,0);box.setOnCheckedChangeListener((v,b)->action.accept(b));return box;}
+    static CheckBox check(Context c,String label,boolean checked,java.util.function.Consumer<Boolean> action){CheckBox box=new CheckBox(c);box.setText(label);box.setTextSize(14);box.setTextColor(MUTED);box.setButtonTintList(ColorStateList.valueOf(PINK));box.setChecked(checked);box.setMinHeight(dp(c,48));box.setPadding(0,0,0,0);box.setOnCheckedChangeListener((v,b)->action.accept(b));return box;}
     static void openTab(Activity a,int tab){
         if((tab==2&&a instanceof BrowserActivity)||(tab==4&&a instanceof PhotoActivity))return;
         Class<?> target=tab==2?BrowserActivity.class:tab==4?PhotoActivity.class:MainActivity.class;

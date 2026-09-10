@@ -42,3 +42,13 @@ Pixelated style uses a coarse copy of the captured frame or imported photo, with
 Coverage now ranges from **−40% to +70% per edge**. At 0%, the original detected box is used. At −40%, its width and height are each 20% of the detected size. Shrinking intentionally reveals more around the center; inspect the result. Existing saved coverage values and style indexes remain valid.
 
 Short motion prediction is bounded to 80 ms and 20% of box size. Brief missed detections may remain visible for up to 120 ms after their capture timestamp. These approximations may overshoot sudden direction changes and do not provide guaranteed video censoring.
+
+## Version 0.4 style settings
+
+Open Settings to see the live simulated preview and choose Solid, Pattern, Labeled, Outline, Custom image or Pixelated. Only the chosen style's controls appear. Colors and hidden values stay saved when you switch styles. Labeled always shows its text field; other filled styles have a Show text toggle. Outline leaves the contents visible.
+
+Choose Custom image to import, replace or remove an image. Choose Pixelated to adjust blocks and border color. Invert previews the area outside the simulated detection. The preview uses generated geometric shapes and demonstrates appearance, not model accuracy.
+
+The coverage card includes one-percent minus/plus buttons and Reset to 0%. Its size explanation describes the effect of the existing per-side margin. Detection categories and Advanced detection expand on tap. The single-language information moved to Help.
+
+The palette and card treatments follow the original Android app's dark plum, hot pink and lime theme. Settings remain centered at comfortable widths on larger displays. Capture permissions and filtering behavior are unchanged.

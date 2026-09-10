@@ -8,7 +8,7 @@ This is an independent project inspired by [Beta Blocker Android](https://isla2d
 
 ## Status
 
-Version **0.3.0**. The owner reports that the updated app works very well on their phone. [CI run 34285010350](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/34285010350) passed APK compilation, Android lint, geometry/tracking and model checks, plus all four Android 15 rendering tests. This establishes a working baseline; sustained performance, filtering accuracy and every device scenario have not been measured individually. See the [validation record](docs/validation.md), [known issues](docs/known-issues.md) and [recommended improvements](docs/improvement-roadmap.md). The improvement review contains proposals only; no further app changes are included.
+Version **0.4.0** refreshes the style settings with an inline preview, six direct choices, contextual controls, precise coverage adjustments and expandable detection settings. It retains the working 0.3 tracking and detection pipeline. See the [0.4 change plan](docs/changes-0.4.md) and the current CI run before downloading. The owner reported that 0.3 worked very well; 0.4 still needs phone confirmation. Historical checks are in the [validation record](docs/validation.md), and future proposals are in the [improvement review](docs/improvement-roadmap.md).
 
 ## Download a test build
 

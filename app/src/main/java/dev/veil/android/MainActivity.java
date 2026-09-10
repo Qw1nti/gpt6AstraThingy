@@ -17,6 +17,8 @@ public final class MainActivity extends Activity {
     private TextView status,stats;
     private Button start;
     private int selected;
+    private StyleSettingsView styleSettings;
+    private boolean categoriesExpanded,advancedExpanded;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable refresh=new Runnable(){public void run(){
         if(status!=null)status.setText(ProtectionService.status);
@@ -24,22 +26,22 @@ public final class MainActivity extends Activity {
         if(start!=null)start.setText(ProtectionService.running?"Stop Protection":"Start Protection");
         handler.postDelayed(this,800);
     }};
-    @Override public void onCreate(Bundle saved){super.onCreate(saved);prefs=new Prefs(this);showTab(saved==null?getIntent().getIntExtra("tab",0):saved.getInt("tab",0));}
+    @Override public void onCreate(Bundle saved){super.onCreate(saved);prefs=new Prefs(this);if(saved!=null){categoriesExpanded=saved.getBoolean("categoriesExpanded");advancedExpanded=saved.getBoolean("advancedExpanded");}showTab(saved==null?getIntent().getIntExtra("tab",0):saved.getInt("tab",0));}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);showTab(intent.getIntExtra("tab",0));}
-    @Override protected void onSaveInstanceState(Bundle state){state.putInt("tab",selected);super.onSaveInstanceState(state);}
+    @Override protected void onSaveInstanceState(Bundle state){state.putInt("tab",selected);state.putBoolean("categoriesExpanded",categoriesExpanded);state.putBoolean("advancedExpanded",advancedExpanded);super.onSaveInstanceState(state);}
     private void showTab(int tab){
         if(tab==2||tab==4){stopService(new Intent(this,ProtectionService.class));startActivity(new Intent(this,tab==2?BrowserActivity.class:PhotoActivity.class));return;}
-        selected=tab==1||tab==3?tab:0;status=null;stats=null;start=null;
+        selected=tab==1||tab==3?tab:0;status=null;stats=null;start=null;styleSettings=null;
         LinearLayout root=Ui.column(this);root.addView(Ui.navigation(this,selected,this::showTab));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);
+        ScrollView scroll=new ScrollView(this){@Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(getChildCount()>0){android.widget.FrameLayout.LayoutParams lp=(android.widget.FrameLayout.LayoutParams)getChildAt(0).getLayoutParams();lp.width=Math.min(w,Ui.dp(MainActivity.this,600));lp.gravity=Gravity.CENTER_HORIZONTAL;getChildAt(0).setLayoutParams(lp);}}};scroll.setFillViewport(false);scroll.setTag("main-scroll");
         LinearLayout content=Ui.column(this);int p=Ui.dp(this,16);content.setPadding(p,0,p,p);scroll.addView(content);
         root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         if(selected==0)home(content);else if(selected==1)settings(content);else help(content);
         Ui.install(this,root);
     }
     private LinearLayout section(LinearLayout parent,String title,String description){
-        LinearLayout c=Ui.card(this);c.addView(Ui.text(this,title,16,Ui.TEXT));
-        if(description!=null)c.addView(Ui.text(this,description,12,Ui.MUTED));parent.addView(c);return c;
+        LinearLayout c=Ui.card(this);c.addView(Ui.text(this,title,18,Ui.TEXT));
+        if(description!=null)c.addView(Ui.text(this,description,14,Ui.MUTED));parent.addView(c);return c;
     }
     private void home(LinearLayout content){
         LinearLayout capture=section(content,"Screen Capture Protection","Start or stop the screen capture service.");
@@ -60,13 +62,18 @@ public final class MainActivity extends Activity {
         status=Ui.text(this,ProtectionService.status,13,Ui.MUTED);session.addView(status);
         stats=Ui.text(this,"0 frames checked",12,Ui.MUTED);session.addView(stats);
         session.addView(Ui.text(this,"Use one-app capture. Detection can be delayed or miss content.",12,Ui.MUTED));
-        TextView footer=Ui.text(this,"Veil 0.3  ·  On-device filtering",11,Ui.MUTED);footer.setGravity(Gravity.CENTER);content.addView(footer);
+        TextView footer=Ui.text(this,"Veil 0.4  ·  On-device filtering",11,Ui.MUTED);footer.setGravity(Gravity.CENTER);content.addView(footer);
     }
     private void settings(LinearLayout content){
-        LinearLayout effects=section(content,"Effects and packs","Preview your censor style or apply a saved look.");
-        effects.addView(Ui.button(this,"Censor Preview",this::preview));effects.addView(Ui.button(this,"Style Presets",this::presets));
-        LinearLayout language=section(content,"Language",null);language.addView(Ui.text(this,"English",18,Ui.TEXT));
-        LinearLayout categories=section(content,"Detection Categories",null);
+        styleSettings=new StyleSettingsView(this,()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),PICK_MASK),this::presets);
+        content.addView(styleSettings);
+        LinearLayout categoryCard=Ui.card(this);content.addView(categoryCard);
+        LinearLayout categories=Ui.column(this);categories.setTag("category-options");
+        Button categoryToggle=Ui.outline(this,"",()->{categoriesExpanded=!categoriesExpanded;showExpanded(categories,categoriesExpanded,"Detection categories");});
+        categories.setVisibility(categoriesExpanded?View.VISIBLE:View.GONE);categories.setContentDescription("Detection categories");
+        categoryToggle.setTag("category-toggle");categoryCard.addView(categoryToggle);categoryCard.addView(categories);
+        showExpanded(categories,categoriesExpanded,"Detection categories");
+        categories.addView(Ui.text(this,"Choose what Veil detects. Your selections are saved.",13,Ui.MUTED));
         String[] names={"Genitals (F)","Genitals (M)","Breasts (Female)","Buttocks","Anus","Genitals (Covered)","Breasts (Covered)","Buttocks (Covered)","Anus (Covered)","All Faces","Chest (Male)","Belly/Stomach","Feet","Armpits"};
         int[] bits={1<<4,1<<14,1<<3,1<<2,1<<6,1,1<<16,1<<17,1<<15,(1<<1)|(1<<12),1<<5,(1<<8)|(1<<13),(1<<7)|(1<<9),(1<<10)|(1<<11)};
         for(int i=0;i<names.length;i+=2){LinearLayout row=new LinearLayout(this);
@@ -74,31 +81,19 @@ public final class MainActivity extends Activity {
                 row.addView(Ui.check(this,names[j],(prefs.mask()&mask)!=0,on->prefs.put("mask",on?prefs.mask()|mask:prefs.mask()&~mask)),new LinearLayout.LayoutParams(0,-2,1));
             }categories.addView(row);
         }
-        LinearLayout style=section(content,"Censor Style",null);choice(style,"style",Prefs.STYLES,0);
-        style.addView(Ui.text(this,"Box outline marks detections but does not hide their contents.",12,Ui.MUTED));
-        style.addView(Ui.text(this,"Censor color",13,Ui.TEXT));
-        choice(style,"color",new String[]{"Black","Hot pink","Purple","Lime"},0);
-        style.addView(Ui.check(this,"Invert censoring",prefs.invert(),b->prefs.bool("invert",b)));
-        style.addView(Ui.text(this,"Invert covers everything outside detected regions. Screen overlays can block touches; Stop stays in the notification.",12,Ui.MUTED));
-        style.addView(Ui.check(this,"Show text on censor",prefs.labels(),b->prefs.bool("labels",b)));
-        EditText label=new EditText(this);label.setSingleLine(true);label.setText(prefs.label());label.setHint("Censor text");label.setTextSize(15);
-        label.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(32)});
-        label.addTextChangedListener(new android.text.TextWatcher(){
-            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){prefs.p.edit().putString("label",s.toString()).apply();}
-            public void afterTextChanged(android.text.Editable s){}
-        });style.addView(label);
-        style.addView(Ui.button(this,CustomMaskImage.load(this)==null?"Choose custom image":"Replace custom image",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),PICK_MASK)));
-        if(CustomMaskImage.load(this)!=null)style.addView(Ui.outline(this,"Remove custom image",()->{CustomMaskImage.remove(this);if(prefs.style()==4)prefs.put("style",0);showTab(1);}));
-        style.addView(Ui.text(this,"Custom images fill each region over an opaque background. One static image is copied to Veil and kept after restart.",12,Ui.MUTED));
-        slider(style,"Pixel block size","pixelSize",8,64,24," px");
-        style.addView(Ui.text(this,"Pixelated border color",13,Ui.TEXT));
-        choice(style,"borderColor",new String[]{"Hot pink","Lime","White","Purple"},0);
-        LinearLayout detection=section(content,"Detection Settings",null);
+        LinearLayout advancedCard=Ui.card(this);content.addView(advancedCard);
+        LinearLayout detection=Ui.column(this);detection.setTag("advanced-options");
+        Button advancedToggle=Ui.outline(this,"",()->{advancedExpanded=!advancedExpanded;showExpanded(detection,advancedExpanded,"Advanced detection");});advancedToggle.setTag("advanced-toggle");
+        advancedCard.addView(advancedToggle);advancedCard.addView(detection);showExpanded(detection,advancedExpanded,"Advanced detection");
         slider(detection,"Confidence threshold","confidence",20,90,45,"%");
-        slider(detection,"Censor coverage","padding",-40,70,18,"%");
         slider(detection,"Screen vertical adjustment","offset",-120,120,0," dp");
-        detection.addView(Ui.text(this,"Negative coverage shrinks boxes; 0% uses the detected size. At -40%, each side is inset 40%. Smaller boxes can leave parts visible. Lower confidence and more categories create more detections. Vertical adjustment is for full-screen alignment.",12,Ui.MUTED));
+        detection.addView(Ui.text(this,"Lower confidence catches more with more false positives. Vertical adjustment aligns full-screen capture.",13,Ui.MUTED));
+    }
+    private void showExpanded(LinearLayout body,boolean expanded,String title){
+        body.setVisibility(expanded?View.VISIBLE:View.GONE);
+        Button toggle=(Button)((LinearLayout)body.getParent()).getChildAt(0);
+        toggle.setText(title+(expanded?"  −":"  +"));
+        toggle.setContentDescription(title+(expanded?", expanded":", collapsed"));
     }
     private void help(LinearLayout content){
         LinearLayout permission=section(content,"Permissions & battery","Appear-on-top permission lets Veil draw censor regions. Android asks for screen capture approval for each session.");
@@ -109,24 +104,11 @@ public final class MainActivity extends Activity {
         LinearLayout tips=section(content,"If something looks wrong","Stop protection and start a new capture session. For offset boxes, try the vertical adjustment slider. Split screen and protected video are unsupported.");
         tips.addView(Ui.text(this,"The built-in browser filters page images. Hardware video and WebGL may remain unfiltered. No filter can guarantee every region is caught.",13,Ui.MUTED));
         LinearLayout privacy=section(content,"Privacy","Detection stays on your phone. No accounts, telemetry, uploads, or automatic recording. Browser websites receive normal browsing traffic and can store cookies.");
-        privacy.addView(Ui.text(this,"Veil is an independent experimental implementation. Build checks pass. Video tracking, alignment and new styles still need device testing.",12,Ui.MUTED));
+        privacy.addView(Ui.text(this,"Veil is an independent app. Language: English. Detection may miss content; review coverage for your setup.",12,Ui.MUTED));
     }
     private void presets(){new AlertDialog.Builder(this).setTitle("Style presets").setItems(new String[]{"Classic black","Pink labels","Purple pattern","Detection outline"},(d,n)->{
-        prefs.put("style",new int[]{0,2,1,3}[n]);prefs.put("color",new int[]{0,1,2,3}[n]);prefs.bool("labels",n==1);showTab(1);
+        prefs.put("style",new int[]{0,2,1,3}[n]);prefs.put("color",new int[]{0,1,2,3}[n]);prefs.bool("labels",n==1);if(styleSettings!=null)styleSettings.refresh();else showTab(1);
     }).setNegativeButton("Cancel",null).show();}
-    private void preview(){
-        MaskView demo=new MaskView(this);
-        android.graphics.Bitmap sample=android.graphics.Bitmap.createBitmap(100,100,android.graphics.Bitmap.Config.ARGB_8888);
-        android.graphics.Canvas canvas=new android.graphics.Canvas(sample);android.graphics.Paint paint=new android.graphics.Paint();
-        paint.setShader(new android.graphics.LinearGradient(0,0,100,100,new int[]{0xFFEE9977,0xFF445588,0xFFBBDD99},null,android.graphics.Shader.TileMode.CLAMP));canvas.drawRect(0,0,100,100,paint);
-        android.graphics.Bitmap pixels=MaskView.pixelate(sample,prefs);sample.recycle();
-        demo.update(java.util.List.of(new DetectionCore.Box(25,20,75,80,.95f,3)),100,100,pixels);
-        demo.setBackgroundColor(0xFF747080);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Style preview · simulated region").setPositiveButton("Done",null).create();
-        dialog.setView(demo,16,16,16,16);
-        dialog.show();
-        dialog.getWindow().setLayout(Ui.dp(this,320),Ui.dp(this,290));
-    }
     private void begin(){
         if(prefs.mask()==0){Ui.message(this,"Choose at least one detection category first.");return;}
         if(!prefs.enabled()){prefs.bool("enabled",true);showTab(0);}
@@ -143,8 +125,8 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int req,String[] permissions,int[] results){super.onRequestPermissionsResult(req,permissions,results);if(req==NOTIFICATIONS)begin();}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);
         if(req==PICK_MASK&&result==RESULT_OK&&data!=null&&data.getData()!=null){
-            Uri uri=data.getData();Ui.message(this,"Importing custom image…");
-            new Thread(()->{try{CustomMaskImage.importImage(getApplicationContext(),uri);prefs.put("style",4);handler.post(()->{if(!isDestroyed()&&!isFinishing())showTab(1);});}
+            Uri uri=data.getData();Toast.makeText(this,"Importing image…",Toast.LENGTH_SHORT).show();
+            new Thread(()->{try{CustomMaskImage.importImage(getApplicationContext(),uri);prefs.put("style",4);handler.post(()->{if(!isDestroyed()&&!isFinishing()){if(styleSettings!=null)styleSettings.refresh();else showTab(1);}});}
                 catch(Exception e){handler.post(()->{if(!isDestroyed())Ui.message(this,"Could not import image. Try a PNG or JPEG.");});}},"Veil image import").start();return;
         }
         if(req==CAPTURE&&result==RESULT_OK&&data!=null){try{startForegroundService(new Intent(this,ProtectionService.class).putExtra("code",result).putExtra("capture",data));}catch(RuntimeException e){Ui.message(this,"Could not start protection: "+e.getClass().getSimpleName());}}}
