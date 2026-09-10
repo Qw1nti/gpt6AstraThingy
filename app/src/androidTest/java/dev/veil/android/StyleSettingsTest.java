@@ -94,5 +94,9 @@ public final class StyleSettingsTest {
         Bitmap image=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();assertNotNull(image);
         File folder=new File(context.getExternalFilesDir(null),"ui-screenshots");assertTrue(folder.isDirectory()||folder.mkdirs());
         try(OutputStream out=new FileOutputStream(new File(folder,name))){assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,out));}finally{image.recycle();}
+        // Gradle removes the test app and its external-files directory after the suite.
+        // Copy synthetic screenshots to shared test output before that cleanup.
+        shell("mkdir -p /sdcard/Download/veil-ui");
+        shell("cp "+new File(folder,name).getAbsolutePath()+" /sdcard/Download/veil-ui/"+name);
     }
 }

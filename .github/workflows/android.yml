@@ -94,7 +94,7 @@ jobs:
           disable-animations: true
           script: |
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/dev.veil.android/files/ui-screenshots app/build/ui-screenshots
+            adb pull /sdcard/Download/veil-ui app/build/ui-screenshots
       - name: Upload Android test reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
