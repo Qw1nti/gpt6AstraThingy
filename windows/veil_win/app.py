@@ -7,7 +7,7 @@ from pathlib import Path
 import random
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -152,6 +152,8 @@ class MainWindow(QMainWindow):
 
     def _changed(self, **changes):
         self.store.update(**changes)
+        if self.page_name == "Censor Styles" and hasattr(self, "style_preview"):
+            self.style_preview.setPixmap(self._style_preview())
         if self.worker is not None:
             self.settings_pending = True
             self.status = "Settings saved — restart protection to apply"
@@ -313,16 +315,17 @@ class MainWindow(QMainWindow):
         frame, section = card("LIVE PREVIEW", "A simulated region; it does not indicate detection accuracy.")
         preview = QFrame()
         preview.setObjectName("preview")
-        preview.setMinimumHeight(130)
+        preview.setMinimumHeight(154)
         row = QHBoxLayout(preview)
-        row.setContentsMargins(90, 28, 90, 28)
-        sample = QLabel("NOPE" if self.store.current["style"] == "Labeled" else self.store.current["style"].upper())
+        row.setContentsMargins(20, 12, 20, 12)
+        sample = QLabel()
         sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sample.setStyleSheet(f"background:{self.store.current['color']};border:3px solid "
-                             f"{self.store.current['border_color']};color:white;font-size:24px;font-weight:800")
+        sample.setPixmap(self._style_preview())
+        self.style_preview = sample
         row.addWidget(sample)
         section.addWidget(preview)
         layout.addWidget(frame)
+
         frame, section = card("CENSOR TYPE")
         grid = QGridLayout()
         for index, style in enumerate(STYLES):
@@ -375,6 +378,28 @@ class MainWindow(QMainWindow):
         if self.store.current["style"] == "Outline":
             section.addWidget(text("Outline marks detections and leaves the content visible.", "muted"))
         layout.addWidget(frame)
+
+    def _style_preview(self):
+        from PySide6.QtGui import QPixmap
+        settings = self.store.current
+        source = Image.new("RGB", (520, 140), "#171717")
+        painter = ImageDraw.Draw(source)
+        for x in range(0, 520, 24):
+            painter.rectangle((x, 15, x+24, 124), fill=(50+(x*3)%150, 40+(x*5)%125, 70+(x*7)%130))
+        coverage = max(-40, min(70, settings["coverage"])) / 100
+        margin_x, margin_y = 300*coverage, 70*coverage
+        box = Box(max(0, round(110-margin_x)), max(0, round(35-margin_y)),
+                  min(520, round(410+margin_x)), min(140, round(105+margin_y)), 1.0, 3)
+        custom = None
+        if settings["style"] == "Custom image" and settings["custom_image"]:
+            try:
+                with Image.open(settings["custom_image"]) as file:
+                    custom = file.convert("RGB")
+            except OSError:
+                pass
+        result = censor_image(source, [box], settings, custom)
+        return QPixmap.fromImage(qimage(result)).scaled(520, 140,
+            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def _style(self, style):
         self._changed(style=style)
