@@ -85,6 +85,10 @@ CI runs these checks, APK compilation, Android lint and Android 15 emulator rend
 
 Filtering happens after capture and may miss or misclassify content. Outline mode does not conceal content. Screen alignment, video coverage, browser state restoration and export behavior require further testing. There is no incognito mode, ad blocker, translation system or direct censored browser download. Read [usage and limitations](docs/usage.md) before testing.
 
+## Windows desktop edition
+
+An independent Windows implementation now lives under [`windows/`](windows/README.md). It has its own desktop interface, local inference, screen overlays and photo export. The Windows CI workflow packages a portable test build. Its feature coverage and real-device validation differ from Android; read the [Windows status and installation notes](windows/README.md).
+
 ## Repository layout
 
 | Path | Purpose |

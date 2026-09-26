@@ -1,0 +1,146 @@
+"""Local NudeNet inference and image rendering shared by live capture and export."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import sys
+from typing import Sequence
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+
+LABELS = (
+    "Covered genitals (female)", "Face (female)", "Exposed buttocks",
+    "Exposed breasts (female)", "Exposed genitals (female)", "Exposed chest (male)",
+    "Exposed anus", "Exposed feet", "Covered belly", "Covered feet",
+    "Covered armpits", "Exposed armpits", "Face (male)", "Exposed belly",
+    "Exposed genitals (male)", "Covered anus", "Covered breasts (female)",
+    "Covered buttocks",
+)
+DEFAULT_CATEGORIES = (2, 3, 4, 6, 14)
+GROUPS = {
+    "NSFW — EXPOSED": (4, 14, 3, 2, 6),
+    "NSFW — COVERED (OPTIONAL)": (0, 16, 17, 15),
+    "FACE / EYES": (1, 12),
+    "BODY PARTS": (13, 8, 5, 7, 9, 11, 10),
+}
+
+
+@dataclass(frozen=True)
+class Box:
+    left: int
+    top: int
+    right: int
+    bottom: int
+    score: float
+    category: int
+
+
+def overlap(a: Box, b: Box) -> float:
+    area = max(0, min(a.right, b.right) - max(a.left, b.left)) * max(0, min(a.bottom, b.bottom) - max(a.top, b.top))
+    union = (a.right-a.left)*(a.bottom-a.top) + (b.right-b.left)*(b.bottom-b.top) - area
+    return area / union if union else 0.0
+
+
+def decode(output: np.ndarray, width: int, height: int, threshold: float,
+           categories: Sequence[int], coverage: int) -> list[Box]:
+    """NudeNet 320n: [1,22,N] or [1,N,22], right/bottom square padding."""
+    output = np.asarray(output)
+    if output.ndim != 3 or output.shape[0] != 1:
+        raise ValueError(f"Unexpected model output shape: {output.shape}")
+    rows = output[0].T if output.shape[1] == 22 else output[0]
+    if rows.shape[1] != 22 or width < 1 or height < 1:
+        raise ValueError(f"Unexpected model output shape: {output.shape}")
+    selected = set(categories)
+    scale = max(width, height) / 320.0
+    margin = max(-40, min(70, coverage)) / 100.0
+    boxes: list[Box] = []
+    for row in rows:
+        category = int(np.argmax(row[4:]))
+        score = float(row[4 + category])
+        if category not in selected or not np.isfinite(score) or score < threshold:
+            continue
+        cx, cy, w, h = (float(x) * scale for x in row[:4])
+        if not all(np.isfinite(x) for x in (cx, cy, w, h)) or w <= 0 or h <= 0:
+            continue
+        dx, dy = w * (0.5 + margin), h * (0.5 + margin)
+        left, top = max(0, round(cx-dx)), max(0, round(cy-dy))
+        right, bottom = min(width, round(cx+dx)), min(height, round(cy+dy))
+        if right > left and bottom > top:
+            boxes.append(Box(left, top, right, bottom, score, category))
+    boxes.sort(key=lambda box: box.score, reverse=True)
+    kept: list[Box] = []
+    for box in boxes:
+        if not any(box.category == prior.category and overlap(box, prior) > .45 for prior in kept):
+            kept.append(box)
+    return kept
+
+
+def model_path() -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    path = base / "app" / "src" / "main" / "assets" / "320n.onnx"
+    if not path.exists():
+        raise FileNotFoundError("Detector model missing. Run python scripts/fetch_model.py from the repository root.")
+    return path
+
+
+class Detector:
+    def __init__(self):
+        import onnxruntime as ort
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 2
+        self.session = ort.InferenceSession(str(model_path()), options, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        shape = self.session.get_inputs()[0].shape
+        if len(shape) != 4 or any(isinstance(actual, int) and actual != expected
+                                  for actual, expected in zip(shape, (1, 3, 320, 320))):
+            raise ValueError(f"Unexpected detector input: {shape}")
+
+    def detect(self, image: Image.Image, settings: dict) -> list[Box]:
+        width, height = image.size
+        edge = max(width, height)
+        scaled = image.convert("RGB").resize((max(1, round(width*320/edge)), max(1, round(height*320/edge))), Image.Resampling.BILINEAR)
+        square = Image.new("RGB", (320, 320))
+        square.paste(scaled, (0, 0))
+        data = np.asarray(square, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
+        output = self.session.run(None, {self.input_name: np.ascontiguousarray(data)})[0]
+        return decode(output, width, height, settings["confidence"] / 100,
+                      settings["categories"], settings["coverage"])
+
+
+def censor_image(source: Image.Image, boxes: Sequence[Box], settings: dict,
+                 custom_image: Image.Image | None = None) -> Image.Image:
+    """Render a saveable RGB copy. Outline mode deliberately leaves pixels visible."""
+    output = source.convert("RGB").copy()
+    draw = ImageDraw.Draw(output)
+    rects = [(b.left, b.top, b.right, b.bottom) for b in boxes]
+    if settings.get("inverse") and settings["style"] != "Outline":
+        # Keep detections visible while concealing everything else.
+        covered = Image.new("RGB", output.size, settings["color"])
+        for rect in rects:
+            covered.paste(output.crop(rect), rect[:2])
+        return covered
+    style = settings["style"]
+    for box, rect in zip(boxes, rects):
+        x1, y1, x2, y2 = rect
+        if style == "Outline":
+            draw.rectangle((x1, y1, x2-1, y2-1), outline=settings["border_color"], width=3)
+            continue
+        if style == "Mosaic":
+            part = output.crop(rect)
+            block = max(4, int(settings["pixel_size"]))
+            small = part.resize((max(1, part.width//block), max(1, part.height//block)), Image.Resampling.BOX)
+            output.paste(small.resize(part.size, Image.Resampling.NEAREST), rect[:2])
+        elif style == "Blur":
+            output.paste(output.crop(rect).filter(ImageFilter.GaussianBlur(radius=18)), rect[:2])
+        elif style == "Custom image" and custom_image is not None:
+            output.paste(custom_image.convert("RGB").resize((x2-x1, y2-y1), Image.Resampling.LANCZOS), rect[:2])
+        else:
+            ImageDraw.Draw(output).rectangle((x1, y1, x2-1, y2-1), fill=settings["color"])
+        draw = ImageDraw.Draw(output)
+        if style == "Mosaic":
+            draw.rectangle((x1, y1, x2-1, y2-1), outline=settings["border_color"], width=3)
+        if style == "Labeled":
+            draw.text((x1+8, y1+8), settings["label"][:32], fill="#ffffff", font=ImageFont.load_default())
+    return output

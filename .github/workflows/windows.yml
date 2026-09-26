@@ -1,0 +1,54 @@
+name: Build Windows desktop
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths: ['windows/**', '.github/workflows/windows.yml', 'scripts/fetch_model.py']
+  pull_request:
+    paths: ['windows/**', '.github/workflows/windows.yml', 'scripts/fetch_model.py']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: windows/requirements.txt
+      - name: Install Windows dependencies
+        run: python -m pip install -r windows/requirements.txt
+      - name: Run model-independent checks
+        run: |
+          python -m compileall -q windows/veil_win windows/run.py
+          $env:PYTHONPATH = 'windows'
+          python -m unittest discover -s windows/tests -p 'test_*.py' -v
+          python windows/tests/smoke_ui.py
+      - name: Fetch pinned local model
+        run: python scripts/fetch_model.py
+      - name: Verify real ONNX inference
+        run: |
+          $env:PYTHONPATH = 'windows'
+          python windows/tests/smoke_model.py
+      - name: Package portable Windows app
+        run: >-
+          python -m PyInstaller --noconfirm --clean --windowed
+          --name VeilWindows
+          --paths windows
+          --add-data "app/src/main/assets/320n.onnx;app/src/main/assets"
+          --add-data "app/src/main/assets/NUDENET-LICENSE.txt;app/src/main/assets"
+          --collect-all onnxruntime
+          windows/run.py
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Veil-Windows-portable
+          path: dist/VeilWindows/
+          if-no-files-found: error

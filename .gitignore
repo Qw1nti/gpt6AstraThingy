@@ -16,6 +16,8 @@ venv/
 keystore.properties
 *.apk
 *.aab
+windows/dist/
+windows/*.spec
 .env
 .env.*
 !.env.example
