@@ -37,6 +37,10 @@ jobs:
         run: |
           $env:PYTHONPATH = 'windows'
           python windows/tests/smoke_model.py
+      - name: Verify native Windows blocking pipeline
+        run: |
+          $env:PYTHONPATH = 'windows'
+          python windows/tests/smoke_windows.py
       - name: Package portable Windows app
         run: >-
           python -m PyInstaller --noconfirm --clean --windowed

@@ -43,6 +43,40 @@ def overlap(a: Box, b: Box) -> float:
     return area / union if union else 0.0
 
 
+def suppress(boxes: Sequence[Box]) -> list[Box]:
+    kept: list[Box] = []
+    for box in sorted(boxes, key=lambda item: item.score, reverse=True):
+        if not any(box.category == prior.category and overlap(box, prior) > .45 for prior in kept):
+            kept.append(box)
+    return kept
+
+
+def cover(boxes: Sequence[Box], width: int, height: int, coverage: int) -> list[Box]:
+    margin = max(-40, min(70, coverage)) / 100.0
+    result = []
+    for box in boxes:
+        dx, dy = (box.right-box.left)*margin, (box.bottom-box.top)*margin
+        left, top = max(0, round(box.left-dx)), max(0, round(box.top-dy))
+        right, bottom = min(width, round(box.right+dx)), min(height, round(box.bottom+dy))
+        if right > left and bottom > top:
+            result.append(Box(left, top, right, bottom, box.score, box.category))
+    return result
+
+
+def scan_regions(width: int, height: int, edge: int = 1280) -> list[tuple[int, int, int, int]]:
+    """Whole display plus overlapping crops, preserving detail on large desktops."""
+    def starts(length):
+        if length <= edge:
+            return [0]
+        # At least 25% overlap, with the last crop flush against the display edge.
+        count = int(np.ceil((length-edge)/(edge*.75)))
+        return [round(i*(length-edge)/count) for i in range(count+1)]
+    whole = (0, 0, width, height)
+    crops = [(x, y, min(width, x+edge), min(height, y+edge))
+             for y in starts(height) for x in starts(width)]
+    return [whole] + [crop for crop in crops if crop != whole]
+
+
 def decode(output: np.ndarray, width: int, height: int, threshold: float,
            categories: Sequence[int], coverage: int) -> list[Box]:
     """NudeNet 320n: [1,22,N] or [1,N,22], right/bottom square padding."""
@@ -54,27 +88,26 @@ def decode(output: np.ndarray, width: int, height: int, threshold: float,
         raise ValueError(f"Unexpected model output shape: {output.shape}")
     selected = set(categories)
     scale = max(width, height) / 320.0
-    margin = max(-40, min(70, coverage)) / 100.0
     boxes: list[Box] = []
-    for row in rows:
-        category = int(np.argmax(row[4:]))
+    # Filter the thousands of empty YOLO candidates in NumPy before Python NMS.
+    class_ids = np.argmax(rows[:, 4:], axis=1)
+    scores = rows[np.arange(len(rows)), 4+class_ids]
+    valid = np.isin(class_ids, list(selected)) & np.isfinite(scores) & (scores >= threshold)
+    for row, category in zip(rows[valid], class_ids[valid]):
+        category = int(category)
         score = float(row[4 + category])
         if category not in selected or not np.isfinite(score) or score < threshold:
             continue
         cx, cy, w, h = (float(x) * scale for x in row[:4])
         if not all(np.isfinite(x) for x in (cx, cy, w, h)) or w <= 0 or h <= 0:
             continue
-        dx, dy = w * (0.5 + margin), h * (0.5 + margin)
+        dx, dy = w * .5, h * .5
         left, top = max(0, round(cx-dx)), max(0, round(cy-dy))
         right, bottom = min(width, round(cx+dx)), min(height, round(cy+dy))
         if right > left and bottom > top:
             boxes.append(Box(left, top, right, bottom, score, category))
-    boxes.sort(key=lambda box: box.score, reverse=True)
-    kept: list[Box] = []
-    for box in boxes:
-        if not any(box.category == prior.category and overlap(box, prior) > .45 for prior in kept):
-            kept.append(box)
-    return kept
+    # Coverage must not change which overlapping detections survive NMS.
+    return cover(suppress(boxes), width, height, coverage)
 
 
 def model_path() -> Path:
@@ -97,7 +130,17 @@ class Detector:
                                   for actual, expected in zip(shape, (1, 3, 320, 320))):
             raise ValueError(f"Unexpected detector input: {shape}")
 
-    def detect(self, image: Image.Image, settings: dict) -> list[Box]:
+    def detect(self, image: Image.Image, settings: dict, *, tiled: bool = False, cancelled=None) -> list[Box]:
+        if tiled:
+            boxes = []
+            for left, top, right, bottom in scan_regions(*image.size):
+                if cancelled is not None and cancelled():
+                    return []
+                part = image if (left, top, right, bottom) == (0, 0, *image.size) else image.crop((left, top, right, bottom))
+                for box in self.detect(part, {**settings, "coverage": 0}):
+                    boxes.append(Box(box.left+left, box.top+top, box.right+left,
+                                     box.bottom+top, box.score, box.category))
+            return cover(suppress(boxes), *image.size, settings["coverage"])
         width, height = image.size
         edge = max(width, height)
         scaled = image.convert("RGB").resize((max(1, round(width*320/edge)), max(1, round(height*320/edge))), Image.Resampling.BILINEAR)

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import time
-from threading import Event
+from threading import Event, Lock
 
 from PIL import Image
 from PySide6.QtCore import QThread, Signal, Qt, QRect
@@ -12,6 +13,8 @@ from PySide6.QtWidgets import QWidget
 
 from .core import Detector, Box, censor_image
 
+LOG = logging.getLogger(__name__)
+
 
 def qimage(image: Image.Image) -> QImage:
     rgb = image.convert("RGB")
@@ -19,7 +22,7 @@ def qimage(image: Image.Image) -> QImage:
 
 
 class CaptureThread(QThread):
-    result = Signal(object, int, int)
+    result = Signal()
     failure = Signal(str)
 
     def __init__(self, settings: dict, monitor_ids: list[int]):
@@ -27,6 +30,29 @@ class CaptureThread(QThread):
         self.settings = dict(settings)
         self.monitor_ids = monitor_ids
         self.stop_event = Event()
+        self.lock = Lock()
+        self.latest = None
+        self.notification_pending = False
+        self.reload_custom = False
+
+    def set_settings(self, settings):
+        with self.lock:
+            self.settings = dict(settings)
+            self.reload_custom = True
+
+    def take_result(self):
+        with self.lock:
+            result, self.latest = self.latest, None
+            self.notification_pending = False
+            return result
+
+    def publish(self, result):
+        with self.lock:
+            self.latest = result
+            notify = not self.notification_pending
+            self.notification_pending = True
+        if notify:
+            self.result.emit()
 
     def stop(self):
         self.stop_event.set()
@@ -35,10 +61,27 @@ class CaptureThread(QThread):
         import mss
         try:
             detector = Detector()
-            interval = {"Low": .35, "Medium": .15, "High": .066, "Ultra": 0}[self.settings["preset"]]
+            custom_path, custom = None, None
             frames = 0
             with mss.mss() as screen:
+                LOG.info("Capture started: monitors=%s rectangles=%s", self.monitor_ids,
+                         [screen.monitors[i] for i in self.monitor_ids])
                 while not self.stop_event.is_set():
+                    with self.lock:
+                        settings = dict(self.settings)
+                        if self.reload_custom:
+                            custom_path = None
+                            self.reload_custom = False
+                    interval = {"Low": .35, "Medium": .15, "High": .066, "Ultra": 0}[settings["preset"]]
+                    path = settings["custom_image"] if settings["style"] == "Custom image" else ""
+                    if path != custom_path:
+                        custom_path, custom = path, None
+                        if path:
+                            try:
+                                with Image.open(path) as file:
+                                    custom = file.convert("RGB")
+                            except (OSError, ValueError):
+                                LOG.exception("Custom mask unavailable; using solid coverage")
                     started = time.monotonic()
                     results = []
                     for monitor_id in self.monitor_ids:
@@ -46,29 +89,24 @@ class CaptureThread(QThread):
                             break
                         monitor = screen.monitors[monitor_id]
                         shot = screen.grab(monitor)
-                        frame = Image.frombytes("RGB", shot.size, shot.rgb)
-                        boxes = detector.detect(frame, self.settings)
+                        # Decode BGRA directly; avoid MSS's additional full-frame RGB buffer.
+                        frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+                        boxes = detector.detect(frame, settings, tiled=True, cancelled=self.stop_event.is_set)
                         patches = []
-                        if self.settings["style"] in ("Mosaic", "Blur", "Custom image") and not self.settings["inverse"]:
-                            custom = None
-                            if self.settings["style"] == "Custom image" and self.settings["custom_image"]:
-                                try:
-                                    with Image.open(self.settings["custom_image"]) as file:
-                                        custom = file.convert("RGB")
-                                except (OSError, ValueError):
-                                    pass
+                        if settings["style"] in ("Mosaic", "Blur", "Custom image") and not settings["inverse"]:
                             for box in boxes:
                                 rect = (box.left, box.top, box.right, box.bottom)
                                 part = frame.crop(rect)
                                 local = Box(0, 0, part.width, part.height, box.score, box.category)
-                                patches.append(qimage(censor_image(part, [local], self.settings, custom)))
+                                patches.append(qimage(censor_image(part, [local], settings, custom)))
                         results.append((monitor_id, boxes, patches, frame.size))
                         frames += 1
                     if self.stop_event.is_set():
                         break
-                    self.result.emit(results, frames, round((time.monotonic()-started)*1000))
+                    self.publish((results, frames, round((time.monotonic()-started)*1000), settings))
                     self.stop_event.wait(max(.025, interval-(time.monotonic()-started)))
         except Exception as exc:
+            LOG.exception("Capture failed")
             self.failure.emit(f"Protection stopped: {type(exc).__name__}: {exc}")
 
 
@@ -78,8 +116,10 @@ class Overlay(QWidget):
                          Qt.WindowType.Tool | Qt.WindowType.WindowTransparentForInput)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.winId()  # Create the native window before associating its display.
+        self.windowHandle().setScreen(screen)
         self.setGeometry(screen.geometry())
-        self.screen = screen
         self.boxes = []
         self.patches = []
         self.source_size = (1, 1)
@@ -89,7 +129,7 @@ class Overlay(QWidget):
         self.show()
         # Exclude this window from supported Windows capture paths to avoid feedback.
         hwnd = int(self.winId())
-        user32 = ctypes.windll.user32
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
         user32.GetWindowLongW.argtypes = (ctypes.c_void_p, ctypes.c_int)
         user32.GetWindowLongW.restype = ctypes.c_long
         user32.SetWindowLongW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_long)
@@ -98,10 +138,16 @@ class Overlay(QWidget):
         user32.SetWindowDisplayAffinity.restype = ctypes.c_bool
         handle = ctypes.c_void_p(hwnd)
         style = user32.GetWindowLongW(handle, -20)
-        user32.SetWindowLongW(handle, -20, style | 0x20 | 0x80 | 0x08000000)  # transparent, tool, no-activate
+        ctypes.set_last_error(0)
+        previous = user32.SetWindowLongW(handle, -20, style | 0x20 | 0x80 | 0x08000000)
+        if not previous and ctypes.get_last_error():
+            self.hide()
+            raise ctypes.WinError(ctypes.get_last_error())
         if not user32.SetWindowDisplayAffinity(handle, 0x11):  # WDA_EXCLUDEFROMCAPTURE
             self.hide()
-            raise RuntimeError("Windows could not exclude the overlay from screen capture. Windows 10 version 2004 or newer is required.")
+            error = ctypes.get_last_error()
+            raise RuntimeError(f"Windows could not exclude the overlay from screen capture (error {error}). Windows 10 version 2004 or newer is required.")
+        LOG.info("Overlay activated: handle=%s geometry=%s DPR=%s", hwnd, self.geometry(), self.devicePixelRatioF())
 
     def update_result(self, boxes, patches, source_size, settings):
         self.boxes, self.patches = boxes, patches
@@ -120,9 +166,11 @@ class Overlay(QWidget):
             whole = QPainterPath()
             whole.addRect(self.rect())
             holes = QPainterPath()
+            holes.setFillRule(Qt.FillRule.WindingFill)
             for box in self.boxes:
                 holes.addRect(box.left*sx, box.top*sy, (box.right-box.left)*sx, (box.bottom-box.top)*sy)
             painter.fillPath(whole.subtracted(holes), color)
+            painter.end()
             return
         for index, box in enumerate(self.boxes):
             x, y = box.left*sx, box.top*sy
@@ -139,3 +187,4 @@ class Overlay(QWidget):
             if style == "Labeled":
                 painter.setPen(Qt.GlobalColor.white)
                 painter.drawText(round(x)+8, round(y)+22, self.settings["label"][:32])
+        painter.end()

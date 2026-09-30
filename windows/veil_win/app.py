@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 from pathlib import Path
 import random
 import sys
 
 from PIL import Image, ImageDraw
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QComboBox, QSlider, QCheckBox, QLineEdit,
@@ -17,6 +18,10 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from .capture import CaptureThread, Overlay, qimage
 from .core import Box, Detector, GROUPS, LABELS, censor_image
 from .settings import SettingsStore, STYLES
+from .displays import display_devices, match_screens
+from .diagnostics import configure_logging
+
+LOG = logging.getLogger(__name__)
 
 RED = "#e53935"
 BG = "#090909"
@@ -143,7 +148,17 @@ class MainWindow(QMainWindow):
         self.frames = 0
         self.last_ms = 0
         self.status = "Ready to protect"
-        self.settings_pending = False
+        self.retired_workers = []
+        self.overlay_test_timer = QTimer(self)
+        self.overlay_test_timer.setSingleShot(True)
+        self.overlay_test_timer.timeout.connect(self.stop_protection)
+        self.restart_timer = QTimer(self)
+        self.restart_timer.setSingleShot(True)
+        self.restart_timer.setInterval(200)
+        self.restart_timer.timeout.connect(self.start_protection)
+        self.display_signals = []
+        QApplication.instance().screenAdded.connect(self._display_changed)
+        QApplication.instance().screenRemoved.connect(self._display_changed)
         self.setWindowTitle("Veil — Windows")
         self.setMinimumSize(1000, 700)
         self.resize(1260, 820)
@@ -155,10 +170,11 @@ class MainWindow(QMainWindow):
         if self.page_name == "Censor Styles" and hasattr(self, "style_preview"):
             self.style_preview.setPixmap(self._style_preview())
         if self.worker is not None:
-            self.settings_pending = True
-            self.status = "Settings saved — restart protection to apply"
-            if self.page_name == "Home":
-                self.show_page("Home")
+            if "monitor" in changes:
+                self.stop_protection()
+                self.restart_timer.start()
+            else:
+                self.worker.set_settings(self.store.current)
 
     def show_page(self, name):
         self.page_name = name
@@ -184,7 +200,7 @@ class MainWindow(QMainWindow):
             tab.setChecked(page == name)
             nav.addWidget(tab)
         nav.addStretch()
-        nav.addWidget(text("LOCAL DETECTION  ·  v0.1", "muted"))
+        nav.addWidget(text("LOCAL DETECTION  ·  v0.2", "muted"))
         outer.addWidget(sidebar)
         main = QWidget()
         column = QVBoxLayout(main)
@@ -217,6 +233,9 @@ class MainWindow(QMainWindow):
         self.home_toggle = button("STOP BLOCKING" if self.worker else "START BLOCKING", self.toggle,
                                   primary=True)
         section.addWidget(self.home_toggle)
+        section.addWidget(button("Test overlay (3 seconds)", self.test_overlay))
+        section.addWidget(text("The overlay test displays a labeled red rectangle on each selected screen. "
+                               "Default categories cover exposed nudity; ordinary faces require the Face categories on Body Parts.", "muted"))
         layout.addWidget(frame)
         frame, section = card("SOURCE", "Choose a display. Use All monitors to cover every connected screen.")
         self.monitor_names = self._monitors()
@@ -290,6 +309,7 @@ class MainWindow(QMainWindow):
         if name != self.store.active:
             self.store.active = name
             self.store.save()
+            self._apply_profile()
             self.show_page("Body Parts")
 
     def _new_profile(self):
@@ -300,6 +320,7 @@ class MainWindow(QMainWindow):
             self.store.profiles[name] = dict(self.store.current)
             self.store.active = name
             self.store.save()
+            self._apply_profile()
             self.show_page("Body Parts")
 
     def _delete_profile(self):
@@ -309,7 +330,13 @@ class MainWindow(QMainWindow):
         del self.store.profiles[self.store.active]
         self.store.active = "Default"
         self.store.save()
+        self._apply_profile()
         self.show_page("Body Parts")
+
+    def _apply_profile(self):
+        if self.worker is not None:
+            self.stop_protection()
+            self.restart_timer.start()
 
     def page_censor_styles(self, layout):
         frame, section = card("LIVE PREVIEW", "A simulated region; it does not indicate detection accuracy.")
@@ -470,7 +497,7 @@ class MainWindow(QMainWindow):
     def _photo_ready(self, image, count):
         self.photo = image
         message = f"{count} detections · {image.width} × {image.height}. Review for missed regions."
-        if self.store.current["style"] == "Outline":
+        if self.photo_job.settings["style"] == "Outline":
             message += " Outline only — content remains visible."
         self.export_message = message
         if self.page_name == "Export":
@@ -526,8 +553,14 @@ class MainWindow(QMainWindow):
     def page_help(self, layout):
         frame, section = card("GET STARTED")
         for line in ("1. Select the categories on Body Parts.", "2. Choose a monitor and style.",
-                     "3. Press Start Blocking. Stop from this window at any time."):
+                     "3. Test overlay to check visible placement, then press Start Blocking.",
+                     "4. For a harmless recognition test, enable Face (female) and Face (male), then display a large clear portrait.",
+                     "5. Scanning with no matches means frames are being processed but no selected category met the confidence threshold."):
             section.addWidget(text(line))
+        layout.addWidget(frame)
+        frame, section = card("DIAGNOSTICS")
+        section.addWidget(text("If the overlay test is invisible or capture stops, inspect %APPDATA%\\Veil\\diagnostics.log. "
+                               "This bounded local log records errors and display geometry; it does not record captured images.", "muted"))
         layout.addWidget(frame)
         frame, section = card("LIMITATIONS")
         for line in ("Capture and overlays need Windows 10 version 2004 or newer, 64-bit.",
@@ -545,88 +578,142 @@ class MainWindow(QMainWindow):
             self.start_protection()
 
     def start_protection(self):
+        self.restart_timer.stop()
+        if self.worker is not None:
+            return
+        if self.overlay_test_timer.isActive():
+            self.stop_protection()
         if not self.store.current["categories"]:
             QMessageBox.warning(self, "No categories", "Choose at least one detection category.")
             return
-        monitors = self._monitors()
-        if not monitors:
-            QMessageBox.warning(self, "No monitors", "Windows screen capture is unavailable.")
-            return
-        selected = self.store.current["monitor"]
-        ids = [i for i, label in monitors if selected == "All monitors" or selected == label]
-        if not ids:
-            ids = [monitors[0][0]]
-        screens = QApplication.screens()
         try:
-            available = list(screens)
-            for monitor_id in ids:
-                import mss
-                with mss.mss() as capture:
-                    source = capture.monitors[monitor_id]
-                # Match physical dimensions, then position; reserve each Qt screen once.
-                screen = min(available, key=lambda s: abs(s.size().width()*s.devicePixelRatio()-source["width"])
-                    + abs(s.size().height()*s.devicePixelRatio()-source["height"])
-                    + abs(s.geometry().x()-source["left"]) / 10
-                    + abs(s.geometry().y()-source["top"]) / 10)
-                available.remove(screen)
-                overlay = Overlay(screen)
-                overlay.activate()
-                self.overlays[monitor_id] = overlay
+            ids = self._create_overlays()
         except Exception as exc:
+            LOG.exception("Overlay setup failed")
             self.stop_protection()
             QMessageBox.warning(self, "Overlay unavailable", str(exc))
             return
         self.worker = CaptureThread(self.store.current, ids)
         self.worker.result.connect(self._capture_result)
         self.worker.failure.connect(self._capture_failed)
+        self.worker.finished.connect(self._worker_finished)
         self.worker.start()
-        self.settings_pending = False
+        self.frames, self.last_ms = 0, 0
         self.status = "Starting local detector…"
         self.show_page("Home")
 
-    def _capture_result(self, results, frames, elapsed):
-        if self.worker is None:
+    def _create_overlays(self):
+        import mss
+        with mss.mss() as capture:
+            monitors = {i: dict(m) for i, m in enumerate(capture.monitors) if i}
+        selected = self.store.current["monitor"]
+        ids = [i for i, m in monitors.items() if selected == "All monitors" or
+               selected == f"Monitor {i} ({m['width']}×{m['height']})"]
+        if not ids:
+            raise RuntimeError("The selected display is unavailable. Choose a connected display on Home.")
+        screens = match_screens({i: monitors[i] for i in ids}, QApplication.screens(), display_devices())
+        for monitor_id, screen in screens.items():
+            overlay = Overlay(screen)
+            self.overlays[monitor_id] = overlay  # Retain even if activation fails, for cleanup.
+            overlay.activate()
+            for signal in (screen.geometryChanged, screen.logicalDotsPerInchChanged):
+                signal.connect(self._display_changed)
+                self.display_signals.append(signal)
+        return ids
+
+    def test_overlay(self):
+        self.stop_protection()
+        try:
+            self._create_overlays()
+            settings = {**self.store.current, "style": "Labeled", "label": "VEIL OVERLAY TEST",
+                        "color": RED, "inverse": False}
+            for overlay in self.overlays.values():
+                overlay.update_result([Box(300, 400, 700, 600, 1, 1)], [], (1000, 1000), settings)
+            self.status = "Overlay test — look for a red rectangle on each selected display"
+            self.overlay_test_timer.start(3000)
+            self.show_page("Home")
+        except Exception as exc:
+            LOG.exception("Overlay test failed")
+            self.stop_protection()
+            QMessageBox.warning(self, "Overlay test failed", str(exc))
+
+    def _display_changed(self, *args):
+        if self.overlays:
+            self.stop_protection()
+            self.status = "Display layout changed — restart blocking to realign overlays"
+            self.show_page("Home")
+
+    def _capture_result(self):
+        worker = self.sender()
+        if worker is not self.worker:
             return
+        result = worker.take_result()
+        if result is None:
+            return
+        results, frames, elapsed, settings = result
         self.frames, self.last_ms = frames, elapsed
         count = 0
         for monitor_id, boxes, patches, size in results:
             if monitor_id in self.overlays:
-                self.overlays[monitor_id].update_result(boxes, patches, size, self.worker.settings)
+                self.overlays[monitor_id].update_result(boxes, patches, size, settings)
                 count += len(boxes)
-        self.status = f"Active · {count} detections" + (" · outline only" if self.worker.settings["style"] == "Outline" else "")
-        if self.settings_pending:
-            self.status += " · restart to apply saved settings"
+        self.status = (f"Blocking · {count} detections" if count else "Scanning · no selected categories detected")
+        if settings["style"] == "Outline":
+            self.status += " · outline only, content remains visible"
         if self.page_name == "Home":
             self.home_status.setText(self.status)
             self.home_stats.setText(f"{self.frames} frames checked  ·  {self.last_ms} ms last pass")
 
     def _capture_failed(self, message):
+        if self.sender() is not self.worker:
+            return
         self.stop_protection()
         self.status = message
         self.show_page("Home")
 
     def stop_protection(self):
+        self.restart_timer.stop()
+        self.overlay_test_timer.stop()
         worker, self.worker = self.worker, None
         if worker is not None:
+            self.retired_workers.append(worker)
             worker.stop()
-            worker.wait(5000)
+            # The finished signal releases it; never destroy a running QThread.
+        for signal in self.display_signals:
+            try:
+                signal.disconnect(self._display_changed)
+            except (RuntimeError, TypeError):
+                pass
+        self.display_signals.clear()
         for overlay in self.overlays.values():
             overlay.hide()
             overlay.deleteLater()
         self.overlays.clear()
-        self.settings_pending = False
         self.status = "Protection stopped"
         if self.page_name == "Home":
             self.show_page("Home")
 
+    def _worker_finished(self):
+        worker = self.sender()
+        if worker is self.worker:
+            self.stop_protection()
+        if worker in self.retired_workers:
+            self.retired_workers.remove(worker)
+        worker.deleteLater()
+
     def closeEvent(self, event):
         self.stop_protection()
-        if self.photo_job is not None and self.photo_job.isRunning():
-            self.photo_job.wait()
+        if any(worker.isRunning() for worker in self.retired_workers) or (
+                self.photo_job is not None and self.photo_job.isRunning()):
+            event.ignore()
+            self.status = "Finishing local work before closing…"
+            QTimer.singleShot(100, self.close)
+            return
         super().closeEvent(event)
 
 
 def main():
+    configure_logging()
     if sys.platform == "win32":
         # Request physical pixels for reliable capture and monitor mapping.
         try:

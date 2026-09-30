@@ -5,11 +5,30 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from veil_win.core import Box, decode, censor_image
+from veil_win.core import Box, decode, censor_image, scan_regions
 from veil_win.settings import DEFAULT, SettingsStore
 
 
 class CoreTests(unittest.TestCase):
+    def test_shrinking_does_not_change_duplicate_suppression(self):
+        raw = np.zeros((1, 22, 2), dtype=np.float32)
+        raw[0, :4, 0] = [160, 160, 100, 100]
+        raw[0, :4, 1] = [180, 160, 100, 100]
+        raw[0, 7, :] = [.9, .8]
+        self.assertEqual(len(decode(raw, 320, 320, .45, [3], -40)), 1)
+
+    def test_tiles_cover_wide_and_portrait_displays(self):
+        self.assertEqual(scan_regions(800, 600), [(0, 0, 800, 600)])
+        for width, height in ((3840, 2160), (1080, 1920)):
+            regions = scan_regions(width, height)
+            self.assertEqual(regions[0], (0, 0, width, height))
+            covered = np.zeros((height, width), dtype=bool)
+            for left, top, right, bottom in regions[1:]:
+                self.assertLessEqual(right-left, 1280)
+                self.assertLessEqual(bottom-top, 1280)
+                covered[top:bottom, left:right] = True
+            self.assertTrue(covered.all())
+
     def test_decode_padding_and_categories(self):
         raw = np.zeros((1, 22, 2), dtype=np.float32)
         raw[0, :4, 0] = [160, 80, 80, 40]
