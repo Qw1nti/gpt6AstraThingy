@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QRect
 from veil_win.app import MainWindow
 from veil_win.capture import CaptureThread, Overlay, qimage
 from veil_win.core import Box
@@ -91,6 +92,10 @@ class PipelineTests(unittest.TestCase):
         class Screen:
             def __init__(self, name): self.device = name
             def name(self): return self.device
+            def geometry(self):
+                return QRect(0, 0, 1920, 1080) if self.device.endswith("1") else QRect(3840, 0, 3840, 2160)
+            def size(self): return self.geometry().size()
+            def devicePixelRatio(self): return 2 if self.device.endswith("1") else 1
         first, second = Screen("\\\\.\\DISPLAY1"), Screen("\\\\.\\DISPLAY2")
         monitors = {1: dict(left=3840, top=0, width=3840, height=2160),
                     2: dict(left=0, top=0, width=3840, height=2160)}
@@ -101,3 +106,10 @@ class PipelineTests(unittest.TestCase):
         self.assertIs(matched[2], first)
         with self.assertRaises(RuntimeError):
             match_screens(monitors, [first], devices)
+
+    def test_single_virtual_display_can_have_an_alias(self):
+        class Screen:
+            def name(self): return "Virtual desktop"
+        screen = Screen()
+        monitors = {1: dict(left=0, top=0, width=1024, height=768)}
+        self.assertIs(match_screens(monitors, [screen], {(0, 0, 1024, 768): "DISPLAY1"})[1], screen)

@@ -45,7 +45,21 @@ def match_screens(monitors: dict[int, dict], screens, devices) -> dict[int, obje
         rect = tuple(monitor[key] for key in ("left", "top", "width", "height"))
         name = devices.get(rect)
         screen = by_name.get(identity(name)) if name else None
+        # Virtual/session displays may have different Qt and Win32 names. A
+        # single display is unambiguous; otherwise require exact physical bounds.
+        if screen is None and name:
+            if len(screens) == len(devices) == 1:
+                screen = screens[0]
+            else:
+                candidates = [s for s in screens if
+                              (s.geometry().x(), s.geometry().y(),
+                               round(s.size().width()*s.devicePixelRatio()),
+                               round(s.size().height()*s.devicePixelRatio())) == rect]
+                if len(candidates) == 1:
+                    screen = candidates[0]
         if screen is None or screen in matched.values():
-            raise RuntimeError("Display layout changed or could not be mapped. Restart protection after checking Windows display settings.")
+            raise RuntimeError(f"Display could not be mapped: capture={rect}, devices={devices}, "
+                               f"Qt names={[s.name() for s in screens]}. "
+                               "Restart protection after checking Windows display settings.")
         matched[index] = screen
     return matched
