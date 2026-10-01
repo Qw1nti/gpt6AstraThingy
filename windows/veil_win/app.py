@@ -20,6 +20,7 @@ from .core import Box, Detector, GROUPS, LABELS, censor_image
 from .settings import SettingsStore, STYLES
 from .displays import display_devices, match_screens
 from .diagnostics import configure_logging
+from .scanning import interval_label
 
 LOG = logging.getLogger(__name__)
 
@@ -147,6 +148,7 @@ class MainWindow(QMainWindow):
         self.page_name = "Home"
         self.frames = 0
         self.last_ms = 0
+        self.scan_feedback = "Start blocking to measure the actual scan rate."
         self.status = "Ready to protect"
         self.retired_workers = []
         self.overlay_test_timer = QTimer(self)
@@ -156,6 +158,10 @@ class MainWindow(QMainWindow):
         self.restart_timer.setSingleShot(True)
         self.restart_timer.setInterval(200)
         self.restart_timer.timeout.connect(self.start_protection)
+        self.interval_save_timer = QTimer(self)
+        self.interval_save_timer.setSingleShot(True)
+        self.interval_save_timer.setInterval(200)
+        self.interval_save_timer.timeout.connect(self.store.save)
         self.display_signals = []
         QApplication.instance().screenAdded.connect(self._display_changed)
         QApplication.instance().screenRemoved.connect(self._display_changed)
@@ -174,7 +180,7 @@ class MainWindow(QMainWindow):
                 self.stop_protection()
                 self.restart_timer.start()
             else:
-                self.worker.set_settings(self.store.current)
+                self.worker.set_settings(self.store.current, reload_custom="custom_image" in changes)
 
     def show_page(self, name):
         self.page_name = name
@@ -200,7 +206,7 @@ class MainWindow(QMainWindow):
             tab.setChecked(page == name)
             nav.addWidget(tab)
         nav.addStretch()
-        nav.addWidget(text("LOCAL DETECTION  ·  v0.2", "muted"))
+        nav.addWidget(text("LOCAL DETECTION  ·  v0.3", "muted"))
         outer.addWidget(sidebar)
         main = QWidget()
         column = QVBoxLayout(main)
@@ -230,12 +236,38 @@ class MainWindow(QMainWindow):
         section.addWidget(self.home_status)
         self.home_stats = text(f"{self.frames} frames checked  ·  {self.last_ms} ms last pass", "muted")
         section.addWidget(self.home_stats)
+        self.home_scan_feedback = text(self.scan_feedback, "muted")
+        section.addWidget(self.home_scan_feedback)
         self.home_toggle = button("STOP BLOCKING" if self.worker else "START BLOCKING", self.toggle,
                                   primary=True)
         section.addWidget(self.home_toggle)
         section.addWidget(button("Test overlay (3 seconds)", self.test_overlay))
         section.addWidget(text("The overlay test displays a labeled red rectangle on each selected screen. "
                                "Default categories cover exposed nudity; ordinary faces require the Face categories on Body Parts.", "muted"))
+        layout.addWidget(frame)
+        frame, section = card("SCAN FREQUENCY", "Choose the time between scans of every selected display. Changes apply while blocking.")
+        self.scan_interval_label = text(interval_label(self.store.current["scan_interval_ms"]), "headline")
+        section.addWidget(self.scan_interval_label)
+        self.scan_interval_slider = QSlider(Qt.Orientation.Horizontal)
+        self.scan_interval_slider.setObjectName("scan_interval")
+        self.scan_interval_slider.setRange(0, 1000)
+        self.scan_interval_slider.setSingleStep(10)
+        self.scan_interval_slider.setPageStep(50)
+        self.scan_interval_slider.setValue(self.store.current["scan_interval_ms"])
+        self.scan_interval_slider.setAccessibleName("Screen scan interval in milliseconds; zero is fastest")
+        self.scan_interval_slider.valueChanged.connect(self._scan_interval)
+        section.addWidget(self.scan_interval_slider)
+        row = QHBoxLayout()
+        fast = text("Faster · more CPU use", "muted")
+        fast.setWordWrap(False)
+        row.addWidget(fast)
+        row.addStretch()
+        slow = text("Slower · less CPU use", "muted")
+        slow.setWordWrap(False)
+        row.addWidget(slow)
+        section.addLayout(row)
+        section.addWidget(text("Start around 150–200 ms. If games or videos stutter, move toward 250–500 ms. "
+                               "Fastest uses the most scanning time. The actual rate is limited by how long each scan takes.", "muted"))
         layout.addWidget(frame)
         frame, section = card("SOURCE", "Choose a display. Use All monitors to cover every connected screen.")
         self.monitor_names = self._monitors()
@@ -245,13 +277,6 @@ class MainWindow(QMainWindow):
                              [combo.itemText(i) for i in range(combo.count())] else "All monitors")
         combo.currentTextChanged.connect(lambda value: self._changed(monitor=value))
         section.addWidget(combo)
-        row = QHBoxLayout()
-        for value in ("Low", "Medium", "High", "Ultra"):
-            choice = button(value, lambda checked=False, v=value: self._preset(v), checkable=True)
-            choice.setChecked(value == self.store.current["preset"])
-            row.addWidget(choice)
-        section.addLayout(row)
-        section.addWidget(text("Presets control minimum scan spacing. Actual speed depends on model inference and monitor count.", "muted"))
         layout.addWidget(frame)
         frame, section = card("CURRENT LOOK")
         section.addWidget(text(f"{self.store.current['style']}  ·  {len(self.store.current['categories'])} categories  ·  "
@@ -259,9 +284,13 @@ class MainWindow(QMainWindow):
         section.addWidget(button("Adjust censor style", lambda: self.show_page("Censor Styles")))
         layout.addWidget(frame)
 
-    def _preset(self, value):
-        self._changed(preset=value)
-        self.show_page("Home")
+    def _scan_interval(self, value):
+        self.scan_interval_label.setText(interval_label(value))
+        self.store.current["scan_interval_ms"] = value
+        if self.worker is not None:
+            self.worker.set_settings(self.store.current)
+        # Apply while dragging, but avoid a disk write for every slider tick.
+        self.interval_save_timer.start()
 
     def _monitors(self):
         try:
@@ -379,12 +408,12 @@ class MainWindow(QMainWindow):
         section.addWidget(coverage_label)
         section.addWidget(coverage)
         section.addWidget(text("Negative values shrink each detected box; −40% leaves 20% of its width and height.", "muted"))
-        if self.store.current["style"] == "Mosaic":
+        if self.store.current["style"] == "Pixelated Blur":
             block = QSpinBox()
             block.setRange(4, 64)
             block.setValue(self.store.current["pixel_size"])
             block.valueChanged.connect(lambda value: self._changed(pixel_size=value))
-            section.addWidget(text("Pixel block size", "eyebrow"))
+            section.addWidget(text("Pixel block size · larger blocks hide more detail", "eyebrow"))
             section.addWidget(block)
         if self.store.current["style"] == "Labeled":
             label = QLineEdit(self.store.current["label"])
@@ -394,7 +423,7 @@ class MainWindow(QMainWindow):
         if self.store.current["style"] == "Custom image":
             section.addWidget(button("Choose image…", self._choose_custom))
             section.addWidget(text(self.store.current["custom_image"] or "No image selected", "muted"))
-        if self.store.current["style"] in ("Mosaic", "Outline"):
+        if self.store.current["style"] in ("Pixelated Blur", "Outline"):
             section.addWidget(text("Border color", "eyebrow"))
             colors = QHBoxLayout()
             for color in ("#ff4545", "#ffffff", "#ed3c9a", "#a0ed5b"):
@@ -599,6 +628,7 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self._worker_finished)
         self.worker.start()
         self.frames, self.last_ms = 0, 0
+        self.scan_feedback = "Measuring scan rate…"
         self.status = "Starting local detector…"
         self.show_page("Home")
 
@@ -650,8 +680,15 @@ class MainWindow(QMainWindow):
         result = worker.take_result()
         if result is None:
             return
-        results, frames, elapsed, settings = result
+        results, frames, elapsed, settings, timing = result
         self.frames, self.last_ms = frames, elapsed
+        rate = (f"{timing.scans_per_second:.1f} scans/sec" if timing.scans_per_second is not None
+                else "Measuring scan rate…")
+        self.scan_feedback = f"{rate} · {timing.work_ms:.0f} ms average scan work"
+        if settings["scan_interval_ms"] == 0:
+            self.scan_feedback += " · fastest mode uses the most scanning time"
+        elif timing.work_ms > settings["scan_interval_ms"]:
+            self.scan_feedback += " · scan time exceeds your interval; rate is limited"
         count = 0
         for monitor_id, boxes, patches, size in results:
             if monitor_id in self.overlays:
@@ -663,6 +700,7 @@ class MainWindow(QMainWindow):
         if self.page_name == "Home":
             self.home_status.setText(self.status)
             self.home_stats.setText(f"{self.frames} frames checked  ·  {self.last_ms} ms last pass")
+            self.home_scan_feedback.setText(self.scan_feedback)
 
     def _capture_failed(self, message):
         if self.sender() is not self.worker:
@@ -690,6 +728,7 @@ class MainWindow(QMainWindow):
             overlay.deleteLater()
         self.overlays.clear()
         self.status = "Protection stopped"
+        self.scan_feedback = "Start blocking to measure the actual scan rate."
         if self.page_name == "Home":
             self.show_page("Home")
 
@@ -702,6 +741,9 @@ class MainWindow(QMainWindow):
         worker.deleteLater()
 
     def closeEvent(self, event):
+        if self.interval_save_timer.isActive():
+            self.interval_save_timer.stop()
+            self.store.save()
         self.stop_protection()
         if any(worker.isRunning() for worker in self.retired_workers) or (
                 self.photo_job is not None and self.photo_job.isRunning()):

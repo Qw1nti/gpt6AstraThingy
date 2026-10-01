@@ -12,6 +12,7 @@ from veil_win.capture import CaptureThread, Overlay, qimage
 from veil_win.core import Box
 from veil_win.displays import match_screens
 from veil_win.settings import DEFAULT
+from veil_win.scanning import ScanTiming
 from PIL import Image
 
 APP = QApplication.instance() or QApplication([])
@@ -46,14 +47,42 @@ class PipelineTests(unittest.TestCase):
             window.worker = current
             old.result.connect(window._capture_result)
             old.failure.connect(window._capture_failed)
-            old.publish(([], 999, 0, DEFAULT))
+            old.publish(([], 999, 0, DEFAULT, ScanTiming(0, None)))
             old.failure.emit("Old failure")
             self.assertIs(window.worker, current)
             self.assertEqual(window.frames, 0)
             current.result.connect(window._capture_result)
-            current.publish(([], 2, 5, DEFAULT))
+            current.publish(([], 2, 5, DEFAULT, ScanTiming(5, 6.7)))
             self.assertEqual(window.frames, 2)
             self.assertIn("no selected categories", window.status)
+            window.worker = None
+            window.close()
+
+    def test_scan_slider_applies_live_and_survives_reopening(self):
+        with patch.object(MainWindow, "_monitors", return_value=[]):
+            window = MainWindow()
+            worker = CaptureThread(DEFAULT, [1])
+            window.worker = worker
+            window.scan_interval_slider.setValue(250)
+            self.assertIs(window.worker, worker)
+            self.assertEqual(worker.settings["scan_interval_ms"], 250)
+            self.assertIn("4.0 scans/sec", window.scan_interval_label.text())
+            self.assertTrue(window.interval_save_timer.isActive())
+            window.worker = None
+            window.close()
+            reopened = MainWindow()
+            self.assertEqual(reopened.scan_interval_slider.value(), 250)
+            reopened.close()
+
+    def test_scan_feedback_reports_processing_limit(self):
+        with patch.object(MainWindow, "_monitors", return_value=[]):
+            window = MainWindow()
+            worker = CaptureThread({**DEFAULT, "scan_interval_ms": 50}, [1])
+            window.worker = worker
+            worker.result.connect(window._capture_result)
+            worker.publish(([], 3, 120, worker.settings, ScanTiming(120, 8)))
+            self.assertIn("8.0 scans/sec", window.home_scan_feedback.text())
+            self.assertIn("rate is limited", window.home_scan_feedback.text())
             window.worker = None
             window.close()
 

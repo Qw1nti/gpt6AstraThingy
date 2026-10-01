@@ -170,7 +170,7 @@ def censor_image(source: Image.Image, boxes: Sequence[Box], settings: dict,
         if style == "Outline":
             draw.rectangle((x1, y1, x2-1, y2-1), outline=settings["border_color"], width=3)
             continue
-        if style == "Mosaic":
+        if style in ("Mosaic", "Pixelated Blur"):
             part = output.crop(rect)
             block = max(4, int(settings["pixel_size"]))
             small = part.resize((max(1, part.width//block), max(1, part.height//block)), Image.Resampling.BOX)
@@ -182,7 +182,7 @@ def censor_image(source: Image.Image, boxes: Sequence[Box], settings: dict,
         else:
             ImageDraw.Draw(output).rectangle((x1, y1, x2-1, y2-1), fill=settings["color"])
         draw = ImageDraw.Draw(output)
-        if style == "Mosaic":
+        if style in ("Mosaic", "Pixelated Blur"):
             draw.rectangle((x1, y1, x2-1, y2-1), outline=settings["border_color"], width=3)
         if style == "Labeled":
             draw.text((x1+8, y1+8), settings["label"][:32], fill="#ffffff", font=ImageFont.load_default())

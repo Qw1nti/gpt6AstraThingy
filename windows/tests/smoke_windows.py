@@ -91,8 +91,16 @@ try:
     until(lambda: all(not o.boxes for o in window.overlays.values()))
     window._changed(categories=[1, 12])
     until(lambda: any(o.boxes for o in window.overlays.values()))
+    worker = window.worker
+    window.scan_interval_slider.setValue(250)
+    window._changed(style="Pixelated Blur", pixel_size=24)
+    until(lambda: any(o.boxes and o.patches and o.settings["style"] == "Pixelated Blur"
+                      and o.settings["scan_interval_ms"] == 250 for o in window.overlays.values()))
+    assert window.worker is worker, "Changing scan rate or pixelation restarted detection"
+    until(lambda: "scans/sec" in window.scan_feedback)
+    print("Measured Windows runner timing (not owner PC):", window.scan_feedback)
     print("Native Windows pipeline passed: mapping, visible window, click-through styles, "
-          "capture exclusion, real face detection, rendered pixels and live settings.")
+          "capture exclusion, real face detection, rendered pixels, live interval and pixelated blur.")
 finally:
     window.stop_protection()
     until(lambda: not window.retired_workers)
