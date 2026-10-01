@@ -71,9 +71,13 @@ Run `python -m unittest discover -s windows/tests -p 'test_*.py' -v` with `PYTHO
 
 Validation on 2026-09-30: 13 regression checks, six-view construction and real portrait/desktop inference passed locally with Linux/offscreen Qt and on the Windows runner. The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36725936026) passed the native blocking pipeline and packaged code commit `bf550b6`. [Download its portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36725936026/artifacts/11103340364). Mixed-DPI hardware, video and sustained latency/CPU use still need PC testing. The owner's reported failure is not yet confirmed resolved on their PC. Android runtime source was not changed.
 
-Version 0.3: 20 local regression checks, six-view construction and real
-portrait/desktop inference passed. The scan slider was visually checked at the
-minimum 1000×700 window size. Native Windows validation and packaging are pending;
-the linked 0.2 build above does not contain these new controls.
+Version 0.3: 20 regression checks, six-view construction and real
+portrait/desktop inference passed locally and on the Windows runner. The scan
+slider was visually checked at the minimum 1000×700 window size. The
+[Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36796771215)
+passed native capture/overlay testing with live interval changes and pixelated
+blur, then packaged code commit `41acca6`.
+[Download version 0.3](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36796771215/artifacts/11134630063).
+No owner-PC performance ceiling or gaming/video impact has been measured.
 
 Preferences, an imported custom mask and bounded diagnostic logs (256 KB each, two backups) are saved under `%APPDATA%\Veil`. Logs record operational errors and display geometry. Captured frames and source photos are not saved automatically. The Windows app does not use a browser or make network requests at runtime.
