@@ -11,7 +11,7 @@ DEFAULT = {
     "categories": list(DEFAULT_CATEGORIES), "confidence": 45, "coverage": 18,
     "style": "Solid Box", "color": "#e53935", "border_color": "#ff4545",
     "pixel_size": 20, "label": "NOPE", "inverse": False,
-    "scan_interval_ms": 150, "monitor": "All monitors", "custom_image": "",
+    "scan_interval_ms": 150, "monitor": "All monitors", "custom_image": "", "motion_prediction": True,
 }
 STYLES = ("Solid Box", "Blur", "Pixelated Blur", "Labeled", "Outline", "Custom image")
 
@@ -27,6 +27,8 @@ def migrate_settings(settings: dict) -> dict:
     merged.pop("preset", None)
     if merged["style"] == "Mosaic":
         merged["style"] = "Pixelated Blur"
+    if any(category in merged["categories"] for category in (1, 12)):
+        merged["categories"] = sorted(set(merged["categories"]).union((1, 12)))
     return merged
 
 

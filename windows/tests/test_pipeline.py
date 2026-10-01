@@ -136,6 +136,47 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             match_screens(monitors, [first], devices)
 
+    def test_overlay_moves_between_results_expires_and_resets_on_policy_change(self):
+        overlay = Overlay(APP.primaryScreen())
+        try:
+            with patch("veil_win.capture.time.monotonic", return_value=1):
+                overlay.update_result([Box(10, 10, 50, 50, .9, 1)], [], (400, 200), DEFAULT, 1)
+            with patch("veil_win.capture.time.monotonic", return_value=1.15):
+                overlay.update_result([Box(30, 10, 70, 50, .9, 1)], [], (400, 200), DEFAULT, 1.1)
+            self.assertEqual(overlay.boxes[0].left, 40)
+            self.assertTrue(overlay.motion_timer.isActive())
+            with patch("veil_win.capture.time.monotonic", return_value=1.2):
+                overlay._animate()
+            self.assertEqual(overlay.boxes[0].left, 50)
+            with patch("veil_win.capture.time.monotonic", return_value=1.3):
+                overlay.update_result([], [], (400, 200), {**DEFAULT, "categories": []}, 1.25)
+            self.assertFalse(overlay.boxes)
+            with patch("veil_win.capture.time.monotonic", return_value=2):
+                overlay.update_result([Box(10, 10, 50, 50, .9, 1)], [], (400, 200), DEFAULT, 1.95)
+            with patch("veil_win.capture.time.monotonic", return_value=2.31):
+                overlay._animate()
+            self.assertFalse(overlay.boxes)
+            self.assertFalse(overlay.motion_timer.isActive())
+            overlay.update_result([Box(10, 10, 50, 50, .9, 1)], [], (400, 200),
+                                  {**DEFAULT, "motion_prediction": False}, 1)
+            self.assertEqual(overlay.boxes[0].left, 10)
+            self.assertFalse(overlay.motion_timer.isActive())
+        finally:
+            overlay.close()
+
+    def test_face_controls_preserve_filters_until_faces_only_is_selected(self):
+        with patch.object(MainWindow, "_monitors", return_value=[]):
+            window = MainWindow()
+            window.store.update(categories=[3])
+            window._faces_category(True)
+            self.assertEqual(window.store.current["categories"], [1, 3, 12])
+            window._faces_category(False)
+            self.assertEqual(window.store.current["categories"], [3])
+            window._faces_only()
+            self.assertEqual(window.store.current["categories"], [1, 12])
+            self.assertEqual(window.page_name, "Body Parts")
+            window.close()
+
     def test_single_virtual_display_can_have_an_alias(self):
         class Screen:
             def name(self): return "Virtual desktop"

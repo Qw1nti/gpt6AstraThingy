@@ -32,7 +32,9 @@ jobs:
           python -m unittest discover -s windows/tests -p 'test_*.py' -v
           python windows/tests/smoke_ui.py
       - name: Fetch pinned local model
-        run: python scripts/fetch_model.py
+        run: |
+          python scripts/fetch_model.py
+          python windows/fetch_face_model.py
       - name: Verify real ONNX inference
         run: |
           $env:PYTHONPATH = 'windows'
@@ -48,6 +50,8 @@ jobs:
           --paths windows
           --add-data "app/src/main/assets/320n.onnx;app/src/main/assets"
           --add-data "app/src/main/assets/NUDENET-LICENSE.txt;app/src/main/assets"
+          --add-data "windows/assets/yunet.onnx;windows/assets"
+          --add-data "windows/assets/YUNET-LICENSE.txt;windows/assets"
           --collect-all onnxruntime
           windows/run.py
       - name: Upload Windows app

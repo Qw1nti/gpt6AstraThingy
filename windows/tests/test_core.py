@@ -71,10 +71,10 @@ class CoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"
             store = SettingsStore(path)
-            store.update(coverage=-20, categories=[1, 3])
+            store.update(coverage=-20, categories=[2, 3])
             loaded = SettingsStore(path)
             self.assertEqual(loaded.current["coverage"], -20)
-            self.assertEqual(loaded.current["categories"], [1, 3])
+            self.assertEqual(loaded.current["categories"], [2, 3])
 
 
 if __name__ == "__main__":

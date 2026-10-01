@@ -22,7 +22,7 @@ DEFAULT_CATEGORIES = (2, 3, 4, 6, 14)
 GROUPS = {
     "NSFW — EXPOSED": (4, 14, 3, 2, 6),
     "NSFW — COVERED (OPTIONAL)": (0, 16, 17, 15),
-    "FACE / EYES": (1, 12),
+    "FACES": (1, 12),
     "BODY PARTS": (13, 8, 5, 7, 9, 11, 10),
 }
 
@@ -120,6 +120,10 @@ def model_path() -> Path:
 
 class Detector:
     def __init__(self):
+        self.session = None
+        self.face_detector = None
+
+    def _load_body_model(self):
         import onnxruntime as ort
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
@@ -131,13 +135,28 @@ class Detector:
             raise ValueError(f"Unexpected detector input: {shape}")
 
     def detect(self, image: Image.Image, settings: dict, *, tiled: bool = False, cancelled=None) -> list[Box]:
+        selected = set(settings["categories"])
+        boxes = []
+        if selected.intersection((1, 12)):
+            if self.face_detector is None:
+                from .faces import FaceDetector
+                self.face_detector = FaceDetector()
+            boxes.extend(self.face_detector.detect(image, settings, tiled=tiled, cancelled=cancelled))
+        body_categories = sorted(selected.difference((1, 12)))
+        if body_categories and (cancelled is None or not cancelled()):
+            if self.session is None:
+                self._load_body_model()
+            boxes.extend(self._detect_body(image, {**settings, "categories": body_categories}, tiled=tiled, cancelled=cancelled))
+        return boxes
+
+    def _detect_body(self, image: Image.Image, settings: dict, *, tiled=False, cancelled=None) -> list[Box]:
         if tiled:
             boxes = []
             for left, top, right, bottom in scan_regions(*image.size):
                 if cancelled is not None and cancelled():
                     return []
                 part = image if (left, top, right, bottom) == (0, 0, *image.size) else image.crop((left, top, right, bottom))
-                for box in self.detect(part, {**settings, "coverage": 0}):
+                for box in self._detect_body(part, {**settings, "coverage": 0}):
                     boxes.append(Box(box.left+left, box.top+top, box.right+left,
                                      box.bottom+top, box.score, box.category))
             return cover(suppress(boxes), *image.size, settings["coverage"])

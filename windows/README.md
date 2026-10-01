@@ -2,16 +2,49 @@
 
 An independent Windows desktop implementation with local visual detection. Its dark interface follows the public Windows reference: black backgrounds, charcoal cards, thin borders, and red controls. Veil uses its own name, code, and artwork. The original commercial application is not bundled or required.
 
-## Current scope (0.3)
+## Current scope (0.4)
 
 - Local NudeNet 320n ONNX inference, using the same pinned model acquisition as the Android project.
+- Dedicated, checksum-pinned YuNet ONNX face detection with rectangular inputs retaining native detail up to a 2560-pixel longest edge.
 - Selected display or all-display capture, with click-through overlays excluded from supported screen capture paths.
 - Category selections and saved profiles, confidence and coverage controls (−40% to +70%), reverse censoring.
 - Solid, smooth blur, pixelated blur, labeled, outline-only and private custom-image styles.
 - Import and permanently censor a local photo, preview, then export a PNG. Outline-only export leaves the underlying content visible.
-- Whole-display and overlapping regional scans retain more detail than shrinking a large desktop to one 320×320 input. Large/multiple displays require more CPU inference work.
+- Body categories use whole-display and overlapping regional scans. Faces use a separate higher-resolution full-display pass. Large/multiple displays and enabling both models require more CPU inference work.
 - Live style/category/confidence changes, a three-second overlay test, and bounded local diagnostics.
 - Live scan-interval slider, measured scan rate and average scan work, with feedback when scan time exceeds the chosen interval.
+- Capture-time motion prediction, animated masks between scans and brief tolerance for missed detections, with a Settings switch.
+
+## Small faces and motion
+
+On **Body Parts**, enable **Faces (all people)**. The detector covers faces
+without assigning gender. Old profiles with either face category enabled migrate
+to this combined selection; other filters stay selected. **Use faces only** is
+an explicit shortcut that clears body filters and skips body-model inference.
+Use it when you only want faces covered and want quicker updates.
+
+The old 320-pixel body model missed small faces even with regional scans. The
+new face path retains screen detail up to a 2560-pixel longest edge, downscaling
+larger displays. This improves a reproduced fixture with roughly 11–21-pixel
+faces on a 1920×1080 desktop, but does not guarantee detection of every tiny,
+occluded, side-on or fast-moving face. Enabling both faces and body categories
+runs both models; use Home's measured work/rate to compare on your PC.
+
+**Motion prediction** is enabled by default in Settings. It associates recent
+boxes using position, size and category, estimates velocity using capture
+timestamps, and repaints masks about every 33 ms without running extra inference.
+Prediction is limited to 120 ms and at most one box edge or 128 pixels per axis.
+Missed boxes remain for 300–600 ms after their last result, depending on the scan
+interval, then expire. Settings changes clear old tracks; an entirely unmatched
+set of new detections clears old positions. A blank scene can retain a mask
+briefly until expiry. Blur/pixelated patches use the last captured texture while
+moving between scans. Outline mode still only marks regions.
+
+Prediction cannot anticipate the first appearance of a face, and rapid changes
+of direction or scene cuts can still cause errors. Turn it off if masks drift.
+Very slow scan intervals may outlast the hold window; prediction is not a
+substitute for fresh detections. Higher scan rates cannot recover detail lost
+by the old model's input resolution.
 
 ## Scan speed and pixelated blur
 
@@ -49,7 +82,7 @@ Requires 64-bit Windows 10 version 2004 or newer. Try a harmless static image fi
 ## Blocking is on but nothing is covered
 
 1. Press **Test overlay (3 seconds)** on Home. A labeled red rectangle should appear on each selected display. This stops an existing blocking session; press **Start Blocking** afterward.
-2. For a harmless detection test, enable **Face (female)** and **Face (male)** on Body Parts and display a large clear portrait. Faces are not enabled by default; the default categories cover exposed nudity.
+2. For a harmless detection test, enable **Faces (all people)** on Body Parts and display a clear portrait. **Use faces only** skips the body model. Faces are not enabled by default; the default categories cover exposed nudity.
 3. Check Home: increasing frame counts with **Scanning · no selected categories detected** mean inference is running but has found no selected matches. Lower confidence if appropriate. **Outline** marks regions without covering their content.
 4. If the rectangle is invisible, alignment is wrong, or protection stops, check `%APPDATA%\Veil\diagnostics.log` for errors. Changing display layout or scaling stops protection; restart it to recreate aligned overlays.
 
@@ -63,6 +96,7 @@ On Windows, with Python 3.11:
 py -3.11 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r windows\requirements.txt
 .venv\Scripts\python.exe scripts\fetch_model.py
+.venv\Scripts\python.exe windows\fetch_face_model.py
 $env:PYTHONPATH = 'windows'
 .venv\Scripts\python.exe windows\run.py
 ```

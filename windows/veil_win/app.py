@@ -206,7 +206,7 @@ class MainWindow(QMainWindow):
             tab.setChecked(page == name)
             nav.addWidget(tab)
         nav.addStretch()
-        nav.addWidget(text("LOCAL DETECTION  ·  v0.3", "muted"))
+        nav.addWidget(text("LOCAL DETECTION  ·  v0.4", "muted"))
         outer.addWidget(sidebar)
         main = QWidget()
         column = QVBoxLayout(main)
@@ -243,7 +243,7 @@ class MainWindow(QMainWindow):
         section.addWidget(self.home_toggle)
         section.addWidget(button("Test overlay (3 seconds)", self.test_overlay))
         section.addWidget(text("The overlay test displays a labeled red rectangle on each selected screen. "
-                               "Default categories cover exposed nudity; ordinary faces require the Face categories on Body Parts.", "muted"))
+                               "Default categories cover exposed nudity; enable Faces on Body Parts to cover faces.", "muted"))
         layout.addWidget(frame)
         frame, section = card("SCAN FREQUENCY", "Choose the time between scans of every selected display. Changes apply while blocking.")
         self.scan_interval_label = text(interval_label(self.store.current["scan_interval_ms"]), "headline")
@@ -321,6 +321,16 @@ class MainWindow(QMainWindow):
         grid.setSpacing(14)
         for index, (group, category_ids) in enumerate(GROUPS.items()):
             frame, section = card(group)
+            if group == "FACES":
+                check = QCheckBox("Faces (all people)")
+                check.setChecked(any(c in self.store.current["categories"] for c in (1, 12)))
+                check.toggled.connect(self._faces_category)
+                section.addWidget(check)
+                section.addWidget(button("Use faces only", self._faces_only))
+                section.addWidget(text("Face-only filtering skips body detection for quicker face updates. "
+                                       "Use the category checkbox to keep other selected filters.", "muted"))
+                grid.addWidget(frame, index//2, index%2)
+                continue
             for category in category_ids:
                 check = QCheckBox(LABELS[category])
                 check.setChecked(category in self.store.current["categories"])
@@ -328,6 +338,16 @@ class MainWindow(QMainWindow):
                 section.addWidget(check)
             grid.addWidget(frame, index//2, index%2)
         layout.addLayout(grid)
+
+    def _faces_category(self, enabled):
+        selected = set(self.store.current["categories"]).difference((1, 12))
+        if enabled:
+            selected.update((1, 12))
+        self._changed(categories=sorted(selected))
+
+    def _faces_only(self):
+        self._changed(categories=[1, 12])
+        self.show_page("Body Parts")
 
     def _category(self, category, enabled):
         selected = set(self.store.current["categories"])
@@ -571,6 +591,12 @@ class MainWindow(QMainWindow):
         section.addWidget(value)
         section.addWidget(slider)
         section.addWidget(text("Lower values catch more candidates and may increase false positives.", "muted"))
+        prediction = QCheckBox("Motion prediction — follow detected regions between scans")
+        prediction.setChecked(self.store.current["motion_prediction"])
+        prediction.toggled.connect(lambda on: self._changed(motion_prediction=on))
+        section.addWidget(prediction)
+        section.addWidget(text("Prediction follows recent motion and briefly holds missed detections. "
+                               "It cannot cover a new face before detection. Turn it off if masks drift.", "muted"))
         layout.addWidget(frame)
         frame, section = card("PRIVACY & DISPLAY")
         section.addWidget(text("Inference stays on your PC. Veil does not send frames or photos to a server. "
@@ -583,7 +609,7 @@ class MainWindow(QMainWindow):
         frame, section = card("GET STARTED")
         for line in ("1. Select the categories on Body Parts.", "2. Choose a monitor and style.",
                      "3. Test overlay to check visible placement, then press Start Blocking.",
-                     "4. For a harmless recognition test, enable Face (female) and Face (male), then display a large clear portrait.",
+                     "4. For a harmless recognition test, enable Faces, then display a clear portrait. Use faces only for quicker face updates.",
                      "5. Scanning with no matches means frames are being processed but no selected category met the confidence threshold."):
             section.addWidget(text(line))
         layout.addWidget(frame)
@@ -656,7 +682,7 @@ class MainWindow(QMainWindow):
         try:
             self._create_overlays()
             settings = {**self.store.current, "style": "Labeled", "label": "VEIL OVERLAY TEST",
-                        "color": RED, "inverse": False}
+                        "color": RED, "inverse": False, "motion_prediction": False}
             for overlay in self.overlays.values():
                 overlay.update_result([Box(300, 400, 700, 600, 1, 1)], [], (1000, 1000), settings)
             self.status = "Overlay test — look for a red rectangle on each selected display"
@@ -690,9 +716,9 @@ class MainWindow(QMainWindow):
         elif timing.work_ms > settings["scan_interval_ms"]:
             self.scan_feedback += " · scan time exceeds your interval; rate is limited"
         count = 0
-        for monitor_id, boxes, patches, size in results:
+        for monitor_id, boxes, patches, size, captured_at in results:
             if monitor_id in self.overlays:
-                self.overlays[monitor_id].update_result(boxes, patches, size, settings)
+                self.overlays[monitor_id].update_result(boxes, patches, size, settings, captured_at)
                 count += len(boxes)
         self.status = (f"Blocking · {count} detections" if count else "Scanning · no selected categories detected")
         if settings["style"] == "Outline":

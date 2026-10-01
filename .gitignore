@@ -18,6 +18,7 @@ keystore.properties
 *.aab
 windows/dist/
 windows/*.spec
+windows/assets/
 .env
 .env.*
 !.env.example

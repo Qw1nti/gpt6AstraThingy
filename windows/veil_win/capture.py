@@ -7,12 +7,13 @@ import time
 from threading import Event, Lock
 
 from PIL import Image
-from PySide6.QtCore import QThread, Signal, Qt, QRect
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QTimer
 from PySide6.QtGui import QImage, QPainter, QColor, QPen
 from PySide6.QtWidgets import QWidget
 
 from .core import Detector, Box, censor_image
 from .scanning import ScanMeter, scan_delay
+from .tracking import MotionTracker
 
 LOG = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class CaptureThread(QThread):
                             break
                         monitor = screen.monitors[monitor_id]
                         shot = screen.grab(monitor)
+                        captured_at = time.monotonic()
                         # Decode BGRA directly; avoid MSS's additional full-frame RGB buffer.
                         frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
                         boxes = detector.detect(frame, settings, tiled=True, cancelled=self.stop_event.is_set)
@@ -103,7 +105,7 @@ class CaptureThread(QThread):
                                 part = frame.crop(rect)
                                 local = Box(0, 0, part.width, part.height, box.score, box.category)
                                 patches.append(qimage(censor_image(part, [local], settings, custom)))
-                        results.append((monitor_id, boxes, patches, frame.size))
+                        results.append((monitor_id, boxes, patches, frame.size, captured_at))
                         frames += 1
                     if self.stop_event.is_set():
                         break
@@ -130,6 +132,11 @@ class Overlay(QWidget):
         self.patches = []
         self.source_size = (1, 1)
         self.settings = {}
+        self.tracker = MotionTracker()
+        self.tracking_key = None
+        self.motion_timer = QTimer(self)
+        self.motion_timer.setInterval(33)
+        self.motion_timer.timeout.connect(self._animate)
 
     def activate(self):
         self.show()
@@ -155,10 +162,39 @@ class Overlay(QWidget):
             raise RuntimeError(f"Windows could not exclude the overlay from screen capture (error {error}). Windows 10 version 2004 or newer is required.")
         LOG.info("Overlay activated: handle=%s geometry=%s DPR=%s", hwnd, self.geometry(), self.devicePixelRatioF())
 
-    def update_result(self, boxes, patches, source_size, settings):
-        self.boxes, self.patches = boxes, patches
+    def update_result(self, boxes, patches, source_size, settings, captured_at=None):
+        key = (source_size, tuple(settings["categories"]), settings["coverage"], settings["confidence"],
+               settings["style"], settings["inverse"], settings["pixel_size"], settings["custom_image"],
+               settings["color"], settings["border_color"], settings["label"], settings.get("motion_prediction", True))
+        if key != self.tracking_key:
+            self.tracker, self.tracking_key = MotionTracker(), key
         self.source_size, self.settings = source_size, dict(settings)
+        if settings.get("motion_prediction", True):
+            now = time.monotonic()
+            self.tracker.update(boxes, patches, now if captured_at is None else captured_at,
+                                now, source_size, self._hold_time())
+            self.boxes, self.patches = self.tracker.render(now, source_size, self._hold_time())
+            self.motion_timer.start()
+        else:
+            self.motion_timer.stop()
+            self.boxes, self.patches = boxes, patches
         self.update()
+
+    def _hold_time(self):
+        return max(.30, min(.60, self.settings.get("scan_interval_ms", 150)/1000*1.5))
+
+    def _animate(self):
+        boxes, patches = self.tracker.render(time.monotonic(), self.source_size, self._hold_time())
+        changed = boxes != self.boxes
+        self.boxes, self.patches = boxes, patches
+        if changed:
+            self.update()
+        if not self.tracker.tracks:
+            self.motion_timer.stop()
+
+    def hideEvent(self, event):
+        self.motion_timer.stop()
+        super().hideEvent(event)
 
     def paintEvent(self, event):
         if not self.settings:
@@ -183,7 +219,7 @@ class Overlay(QWidget):
             w, h = (box.right-box.left)*sx, (box.bottom-box.top)*sy
             rect = (round(x), round(y), round(w), round(h))
             style = self.settings["style"]
-            if style in ("Mosaic", "Pixelated Blur", "Blur", "Custom image") and index < len(self.patches):
+            if style in ("Mosaic", "Pixelated Blur", "Blur", "Custom image") and index < len(self.patches) and self.patches[index] is not None:
                 painter.drawImage(QRect(*rect), self.patches[index])
             elif style != "Outline":
                 painter.fillRect(*rect, color)
