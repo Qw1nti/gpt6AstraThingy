@@ -114,4 +114,19 @@ blur, then packaged code commit `41acca6`.
 [Download version 0.3](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36796771215/artifacts/11134630063).
 No owner-PC performance ceiling or gaming/video impact has been measured.
 
+Version 0.4, validated on 2026-10-01: 32 regression checks, six-view construction,
+both local models, blank-screen rejection, 11–21-pixel face boxes and a 36-face
+desktop fixture passed locally and on Windows. The
+[Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36800393730)
+passed native small moving-face capture, association, overlay rendering and
+expiry, live pixelation/rate changes, and portable packaging of code commit
+`cedf950`. [Download version 0.4](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36800393730/artifacts/11135655820).
+The face/prediction controls were visually checked at 1000×700. These fixtures
+use one public portrait at different scales/positions; they are regression
+checks, not a diverse accuracy benchmark. Runner timing was 55 ms average scan
+work with a requested 250 ms interval (4 scans/sec), not an owner-PC benchmark.
+Actual video accuracy, end-to-end latency, CPU load, mixed-DPI hardware and
+sustained performance still need testing on the owner's PC. Android runtime
+source remains unchanged.
+
 Preferences, an imported custom mask and bounded diagnostic logs (256 KB each, two backups) are saved under `%APPDATA%\Veil`. Logs record operational errors and display geometry. Captured frames and source photos are not saved automatically. The Windows app does not use a browser or make network requests at runtime.
