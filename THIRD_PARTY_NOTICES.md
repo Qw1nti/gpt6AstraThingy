@@ -19,6 +19,22 @@ Microsoft and contributors. MIT license. Android runtime resolved through Maven 
 
 Source and notices: https://github.com/microsoft/onnxruntime/tree/v1.21.0
 
+## YuNet face detector (Windows only)
+
+OpenCV Zoo's `face_detection_yunet_2026may.onnx`, pinned to revision
+`47534e27c9851bb1128ccc0102f1145e27f23f98`:
+https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet
+
+Model SHA-256: `ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0`.
+The build script `windows/fetch_face_model.py` checks the model and upstream
+MIT notice before installation. The notice (copyright 2020 ShiqiYu) is packaged
+as `windows/assets/YUNET-LICENSE.txt`. Model bytes and the downloaded notice are
+not tracked. The app runs the model locally through ONNX Runtime; OpenCV is not
+a runtime dependency.
+
+Decoding uses the published score/box equations in OpenCV's FaceDetectorYN:
+https://github.com/opencv/opencv/blob/4.10.0/modules/objdetect/src/face_detect.cpp
+
 ## Build tools
 
 Android Gradle Plugin, Android SDK and Gradle have their own licenses. The build uses official distributions/repositories; SDK and Gradle distribution binaries are downloaded during setup.
