@@ -1,0 +1,198 @@
+# Veil for Windows
+
+An independent Windows desktop implementation with local visual detection. Version 0.5 replaces the original black/red interface with Windows 11 Fluent-inspired styling: light/dark surfaces, a blue accent, Segoe typography, rounded cards and a persistent navigation pane. Veil uses its own name, code, and artwork. The original commercial application is not bundled or required.
+
+## Current scope (0.6)
+
+- Local NudeNet 320n ONNX inference, using the same pinned model acquisition as the Android project.
+- Dedicated, checksum-pinned YuNet ONNX face detection with rectangular inputs retaining native detail up to a 2560-pixel longest edge.
+- Selected display or all-display capture, with click-through overlays excluded from supported screen capture paths.
+- Category selections and saved profiles, confidence and coverage controls (−40% to +70%), reverse censoring.
+- Solid, smooth blur, pixelated blur, labeled, outline-only and private custom-image styles.
+- Import and permanently censor a local photo, preview, then export a PNG. Outline-only export leaves the underlying content visible.
+- Body categories use whole-display and overlapping regional scans. Faces use a separate higher-resolution full-display pass. Large/multiple displays and enabling both models require more CPU inference work.
+- Live style/category/confidence changes, a three-second overlay test, and bounded local diagnostics.
+- Live scan-interval slider, measured scan rate and average scan work, with feedback when scan time exceeds the chosen interval.
+- Capture-time motion prediction, animated masks between scans and brief tolerance for missed detections, with a Settings switch.
+
+Version 0.6 retains the approved interface and optimizes scan delivery, live
+effects, inference buffers and crowded tracking. It fixes stale settings results
+and masks expiring between slow scans. See the [pipeline review and measured
+limits](PERFORMANCE.md) for reproducible component benchmarks and tradeoffs.
+
+## Windows 11 interface
+
+Home puts blocking status, the start/stop action and scan frequency first, with
+quick links to display selection, detection categories, appearance and the
+three-second overlay test. A running session keeps its status in the navigation
+pane while you visit other pages. At compact widths, navigation becomes an icon
+rail with tooltips and accessible names. Help and Settings stay at the bottom.
+
+| Earlier page | Current page | Purpose |
+| --- | --- | --- |
+| Body Parts | Detection | Profiles, faces, body categories and reverse censoring |
+| Censor Styles | Appearance | Six effects, illustrated preview and relevant controls |
+| Export | Photos | Import, inspect and save a processed image |
+
+In **Settings → App theme**, choose **Use system setting** (the default),
+**Light** or **Dark**. This is an app-wide preference, independent of detection
+profiles. It does not change censor colors, selected categories, scan frequency
+or a running worker. Existing preferences and custom masks remain compatible.
+System mode uses the Windows app color preference, with Qt's scheme as a fallback.
+
+The interface uses the existing PySide6 framework, with Fluent-inspired controls,
+keyboard-operable checkboxes/switches, native file/color dialogs and the real
+Windows title bar. It does not use WinUI or claim Mica/Acrylic backdrops. Windows
+11 can supply rounded window corners; Windows 10 retains its system frame.
+The 0.5 UI redesign left detection, tracking and overlay rendering unchanged;
+version 0.6's pipeline work is documented separately in [the performance review](PERFORMANCE.md).
+
+Design references: [Windows typography](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography),
+[app settings](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings),
+and [window corners](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-rounded-corners).
+
+## Small faces and motion
+
+On **Detection**, enable **Detect faces**. The detector covers faces
+without assigning gender. Old profiles with either face category enabled migrate
+to this combined selection; other filters stay selected. **Use faces only** is
+an explicit shortcut that clears body filters and skips body-model inference.
+Use it when you only want faces covered and want quicker updates.
+
+The old 320-pixel body model missed small faces even with regional scans. The
+new face path retains screen detail up to a 2560-pixel longest edge, downscaling
+larger displays. This improves a reproduced fixture with roughly 11–21-pixel
+faces on a 1920×1080 desktop, but does not guarantee detection of every tiny,
+occluded, side-on or fast-moving face. Enabling both faces and body categories
+runs both models; use Home's measured work/rate to compare on your PC.
+
+**Motion prediction** is enabled by default in Settings. It associates recent
+boxes using position, size and category, estimates velocity using capture
+timestamps, and updates moving mask areas about every 16 ms without running extra inference.
+Prediction is limited to 120 ms and at most one box edge or 128 pixels per axis.
+Missed boxes remain for 300–1500 ms after their last result, depending on the scan
+interval and observed cadence, then expire. Policy changes clear old tracks; an entirely unmatched
+set of new detections clears old positions. A blank scene can retain a mask
+briefly until expiry. Blur/pixelated patches use the last captured texture while
+moving between scans. Outline mode still only marks regions.
+
+Prediction cannot anticipate the first appearance of a face, and rapid changes
+of direction or scene cuts can still cause errors. Turn it off if masks drift.
+Passes slower than the bounded hold window can still leave gaps; prediction is
+not a substitute for fresh detections. Higher scan rates cannot recover detail lost
+by the old model's input resolution.
+
+## Scan speed and pixelated blur
+
+Home has a **Scan frequency** slider: 0 means **Fastest available**, and other
+values request that many milliseconds between the start of scans of every
+selected display, up to 1,000 ms. For example, 100 ms requests up to 10 scans/sec,
+200 ms up to 5, and 500 ms up to 2. The default is 150 ms. Existing Low/Medium/High/Ultra
+profiles migrate to 350/150/66/0 ms respectively.
+
+These are requested rates. Each capture/inference/effect pass must finish before
+another starts, followed by at least a 5 ms yield; missed intervals do not queue
+up. Home reports the achieved scan rate and average scan work over up to eight
+passes. A slower pass limits the achieved rate even when a shorter interval is
+selected. Timing covers all selected displays together and is not a CPU-usage
+percentage or a guarantee of game/video performance.
+
+There is no universal scan rate without performance impact. Start around 150–200
+ms, compare your normal game/video performance, then try shorter intervals.
+Use 250–500 ms if other work stutters. Fastest uses the most scanning time.
+Sustained tests on the owner's PC are still needed to determine a suitable rate.
+
+Choose **Pixelate** under Appearance for block pixelation, adjustable
+block size and a colored border; **Blur** remains the smooth blur effect. The old
+Mosaic style migrates to Pixelated Blur (displayed as Pixelate), retaining its block size, border color
+and coverage. Live effects, previews and photo export share this rendering.
+
+Video export, screen recording, OBS virtual camera, achievements, animations, language packs, and GPU acceleration are not implemented. No performance or exact visual-parity claim is made. In particular, detection is asynchronous and cannot guarantee that content is hidden before it appears. Protected video, exclusive fullscreen surfaces and secure desktops may not be captured.
+
+## Download on Windows
+
+Current [version 0.6 portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910/artifacts/12122692931).
+Close any running Veil instance before updating. Your settings remain under `%APPDATA%\Veil`.
+
+Open a successful [Windows workflow run](https://github.com/Qw1nti/gpt6AstraThingy/actions/workflows/windows.yml), download **Veil-Windows-portable**, extract the ZIP, then run `VeilWindows.exe` inside the extracted folder. Keep all extracted files together. GitHub sign-in may be required to download the artifact. Windows may warn about an unsigned test executable.
+
+Requires 64-bit Windows 10 version 2004 or newer. Try a harmless static image first. Use the Home button to stop protection. Test overlay alignment and video behavior on the actual PC, especially with mixed DPI or multiple monitors.
+
+## Blocking is on but nothing is covered
+
+1. Press **Test overlay (3 seconds)** on Home. A labeled red rectangle should appear on each selected display. This stops an existing blocking session; press **Start Blocking** afterward.
+2. For a harmless detection test, enable **Detect faces** on Detection and display a clear portrait. **Use faces only** skips the body model. Faces are not enabled by default; the default categories cover exposed nudity.
+3. Check Home: increasing frame counts with **Scanning · no selected categories detected** mean inference is running but has found no selected matches. Lower confidence if appropriate. **Outline** marks regions without covering their content.
+4. If the rectangle is invisible, alignment is wrong, or protection stops, check `%APPDATA%\Veil\diagnostics.log` for errors. Changing display layout or scaling stops protection; restart it to recreate aligned overlays.
+
+Version 0.2 fixes a reproduced detail-loss failure: the original whole-desktop path missed a benign 512×512 portrait placed on a 1920×1080 background; regional scanning recognizes it. This is a confirmed test-case fix, not proof of the cause on the owner's PC or of general detection accuracy.
+
+## Development
+
+On Windows, with Python 3.11:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r windows\requirements.txt
+.venv\Scripts\python.exe scripts\fetch_model.py
+.venv\Scripts\python.exe windows\fetch_face_model.py
+$env:PYTHONPATH = 'windows'
+.venv\Scripts\python.exe windows\run.py
+```
+
+Run `python -m unittest discover -s windows/tests -p 'test_*.py' -v` with `PYTHONPATH=windows`. The GitHub workflow runs these checks, an offscreen UI smoke test, real portrait/desktop ONNX recognition, and `windows/tests/smoke_windows.py` on the native Windows desktop before packaging with PyInstaller. The native check exercises device mapping, window visibility/click-through styles, capture exclusion, detection-to-render delivery and live settings. It does not establish behavior on the owner's display/GPU configuration.
+
+Validation on 2026-09-30: 13 regression checks, six-view construction and real portrait/desktop inference passed locally with Linux/offscreen Qt and on the Windows runner. The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36725936026) passed the native blocking pipeline and packaged code commit `bf550b6`. [Download its portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36725936026/artifacts/11103340364). Mixed-DPI hardware, video and sustained latency/CPU use still need PC testing. The owner's reported failure is not yet confirmed resolved on their PC. Android runtime source was not changed.
+
+Version 0.3: 20 regression checks, six-view construction and real
+portrait/desktop inference passed locally and on the Windows runner. The scan
+slider was visually checked at the minimum 1000×700 window size. The
+[Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36796771215)
+passed native capture/overlay testing with live interval changes and pixelated
+blur, then packaged code commit `41acca6`.
+[Download version 0.3](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36796771215/artifacts/11134630063).
+No owner-PC performance ceiling or gaming/video impact has been measured.
+
+Version 0.4, validated on 2026-10-01: 32 regression checks, six-view construction,
+both local models, blank-screen rejection, 11–21-pixel face boxes and a 36-face
+desktop fixture passed locally and on Windows. The
+[Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36800393730)
+passed native small moving-face capture, association, overlay rendering and
+expiry, live pixelation/rate changes, and portable packaging of code commit
+`cedf950`. [Download version 0.4](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/36800393730/artifacts/11135655820).
+The face/prediction controls were visually checked at 1000×700. These fixtures
+use one public portrait at different scales/positions; they are regression
+checks, not a diverse accuracy benchmark. Runner timing was 55 ms average scan
+work with a requested 250 ms interval (4 scans/sec), not an owner-PC benchmark.
+Actual video accuracy, end-to-end latency, CPU load, mixed-DPI hardware and
+sustained performance still need testing on the owner's PC. Android runtime
+source remains unchanged.
+
+Version 0.5, validated on 2026-10-18 UTC: 39 regression checks passed locally
+and on the Windows runner, including theme persistence without restarting
+capture, keyboard controls, contextual style controls, compact navigation and
+photo/outline status across page changes. All six pages fit without horizontal
+scrolling at 820×600 and 1120×780 in both modes. Local Qt renders were also
+reviewed at 150% scale. The Windows runner rendered 36 UI review images using
+the native Windows Qt plugin; representative Home, Detection, Appearance and
+Settings images were visually inspected with Windows fonts.
+The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563)
+also passed real model inference, the native moving-face capture/overlay test
+and portable packaging of code commit `a791143`.
+[Download version 0.5](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563/artifacts/12122227653).
+Detection, tracking and overlay-rendering source were not changed. Actual
+Windows 11 system-theme changes, title-bar/Snap behavior, mixed-DPI monitors,
+accessibility tools and ordinary use still need owner-PC testing; this is not
+a claim of exact WinUI parity or a new performance benchmark.
+
+Preferences, an imported custom mask and bounded diagnostic logs (256 KB each, two backups) are saved under `%APPDATA%\Veil`. Logs record operational errors and display geometry. Captured frames and source photos are not saved automatically. The Windows app does not use a browser or make network requests at runtime.
+
+Version 0.6, validated on 2026-10-18 UTC: 53 regression checks, both local model
+fixtures, and native Windows capture/overlay tests passed, including moving
+faces, live pixelation/rate changes, mask continuity at 1000 ms and expiry on a
+blank scene. The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910)
+packaged code commit `92d21f3`.
+[Download version 0.6](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910/artifacts/12122692931).
+Local before/after component timings, the longer bounded hold on slow scans and
+remaining hardware checks are recorded in [PERFORMANCE.md](PERFORMANCE.md).
+The approved interface is retained. Android runtime source is unchanged.
