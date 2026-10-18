@@ -44,7 +44,8 @@ The interface uses the existing PySide6 framework, with Fluent-inspired controls
 keyboard-operable checkboxes/switches, native file/color dialogs and the real
 Windows title bar. It does not use WinUI or claim Mica/Acrylic backdrops. Windows
 11 can supply rounded window corners; Windows 10 retains its system frame.
-Detection, tracking and overlay rendering source are unchanged in this redesign.
+The 0.5 UI redesign left detection, tracking and overlay rendering unchanged;
+version 0.6's pipeline work is documented separately in [the performance review](PERFORMANCE.md).
 
 Design references: [Windows typography](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography),
 [app settings](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings),
@@ -110,7 +111,7 @@ Video export, screen recording, OBS virtual camera, achievements, animations, la
 
 ## Download on Windows
 
-Current [version 0.5 portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563/artifacts/12122227653).
+Current [version 0.6 portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910/artifacts/12122692931).
 Close any running Veil instance before updating. Your settings remain under `%APPDATA%\Veil`.
 
 Open a successful [Windows workflow run](https://github.com/Qw1nti/gpt6AstraThingy/actions/workflows/windows.yml), download **Veil-Windows-portable**, extract the ZIP, then run `VeilWindows.exe` inside the extracted folder. Keep all extracted files together. GitHub sign-in may be required to download the artifact. Windows may warn about an unsigned test executable.
@@ -185,3 +186,13 @@ accessibility tools and ordinary use still need owner-PC testing; this is not
 a claim of exact WinUI parity or a new performance benchmark.
 
 Preferences, an imported custom mask and bounded diagnostic logs (256 KB each, two backups) are saved under `%APPDATA%\Veil`. Logs record operational errors and display geometry. Captured frames and source photos are not saved automatically. The Windows app does not use a browser or make network requests at runtime.
+
+Version 0.6, validated on 2026-10-18 UTC: 53 regression checks, both local model
+fixtures, and native Windows capture/overlay tests passed, including moving
+faces, live pixelation/rate changes, mask continuity at 1000 ms and expiry on a
+blank scene. The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910)
+packaged code commit `92d21f3`.
+[Download version 0.6](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910/artifacts/12122692931).
+Local before/after component timings, the longer bounded hold on slow scans and
+remaining hardware checks are recorded in [PERFORMANCE.md](PERFORMANCE.md).
+The approved interface is retained. Android runtime source is unchanged.

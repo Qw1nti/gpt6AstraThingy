@@ -72,6 +72,18 @@ occupy neighboring cells gain less from the spatial search.
 
 ## Validation and remaining PC checks
 
+All 53 regressions passed locally and on Windows. The
+[Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910)
+passed both local models and native moving-face/slow-interval checks, then
+packaged code commit `92d21f3`.
+[Download the portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39090959910/artifacts/12122692931).
+
+The Windows runner measured 5.931 ms for the 300-track fixture, 19.098 ms for
+54 pixelated patches, 0.023 ms for the warm custom-mask fixture, and 135.763 ms
+for 54 blur patches. Its native fixture reported 39 ms average scan work with
+a 250 ms requested interval (4 scans/sec). These are runner measurements;
+there was no paired Windows baseline or owner-PC throughput/latency measurement.
+
 Regression coverage includes early per-display delivery, coalescing across
 displays, stale-policy rejection, notifications, cache memory/invalidation,
 image ownership, preprocessing padding, partial-paint alpha clearing,
