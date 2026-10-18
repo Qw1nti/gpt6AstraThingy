@@ -122,6 +122,7 @@ class Detector:
     def __init__(self):
         self.session = None
         self.face_detector = None
+        self.body_input = None
 
     def _load_body_model(self):
         import onnxruntime as ort
@@ -134,18 +135,27 @@ class Detector:
                                   for actual, expected in zip(shape, (1, 3, 320, 320))):
             raise ValueError(f"Unexpected detector input: {shape}")
 
-    def detect(self, image: Image.Image, settings: dict, *, tiled: bool = False, cancelled=None) -> list[Box]:
+    def prepare(self, settings, cancelled=None):
+        if cancelled is not None and cancelled():
+            return
         selected = set(settings["categories"])
-        boxes = []
         if selected.intersection((1, 12)):
             if self.face_detector is None:
                 from .faces import FaceDetector
                 self.face_detector = FaceDetector()
+        if selected.difference((1, 12)) and self.session is None and (cancelled is None or not cancelled()):
+            self._load_body_model()
+
+    def detect(self, image: Image.Image, settings: dict, *, tiled: bool = False, cancelled=None) -> list[Box]:
+        self.prepare(settings, cancelled)
+        if cancelled is not None and cancelled():
+            return []
+        selected = set(settings["categories"])
+        boxes = []
+        if selected.intersection((1, 12)):
             boxes.extend(self.face_detector.detect(image, settings, tiled=tiled, cancelled=cancelled))
         body_categories = sorted(selected.difference((1, 12)))
         if body_categories and (cancelled is None or not cancelled()):
-            if self.session is None:
-                self._load_body_model()
             boxes.extend(self._detect_body(image, {**settings, "categories": body_categories}, tiled=tiled, cancelled=cancelled))
         return boxes
 
@@ -162,11 +172,15 @@ class Detector:
             return cover(suppress(boxes), *image.size, settings["coverage"])
         width, height = image.size
         edge = max(width, height)
-        scaled = image.convert("RGB").resize((max(1, round(width*320/edge)), max(1, round(height*320/edge))), Image.Resampling.BILINEAR)
-        square = Image.new("RGB", (320, 320))
-        square.paste(scaled, (0, 0))
-        data = np.asarray(square, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
-        output = self.session.run(None, {self.input_name: np.ascontiguousarray(data)})[0]
+        rgb = image if image.mode == "RGB" else image.convert("RGB")
+        scaled = rgb.resize((max(1, round(width*320/edge)), max(1, round(height*320/edge))), Image.Resampling.BILINEAR)
+        if self.body_input is None:
+            self.body_input = np.zeros((1, 3, 320, 320), dtype=np.float32)
+        else:
+            self.body_input.fill(0)
+        np.divide(np.asarray(scaled).transpose(2, 0, 1), np.float32(255),
+                  out=self.body_input[0, :, :scaled.height, :scaled.width], casting="unsafe")
+        output = self.session.run(None, {self.input_name: self.body_input})[0]
         return decode(output, width, height, settings["confidence"] / 100,
                       settings["categories"], settings["coverage"])
 
@@ -174,7 +188,7 @@ class Detector:
 def censor_image(source: Image.Image, boxes: Sequence[Box], settings: dict,
                  custom_image: Image.Image | None = None) -> Image.Image:
     """Render a saveable RGB copy. Outline mode deliberately leaves pixels visible."""
-    output = source.convert("RGB").copy()
+    output = source.copy() if source.mode == "RGB" else source.convert("RGB")
     draw = ImageDraw.Draw(output)
     rects = [(b.left, b.top, b.right, b.bottom) for b in boxes]
     if settings.get("inverse") and settings["style"] != "Outline":

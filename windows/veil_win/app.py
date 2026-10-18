@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self.overlays = {}
         self.page_name = "Home"
         self.frames = 0
+        self.detection_counts = {}
         self.last_ms = 0
         self.scan_feedback = "Start blocking to measure the actual scan rate."
         self.status = "Ready to protect"
@@ -119,6 +120,9 @@ class MainWindow(QMainWindow):
                 self.restart_timer.start()
             else:
                 self.worker.set_settings(self.store.current, reload_custom="custom_image" in changes)
+                if "categories" in changes or "confidence" in changes:
+                    for overlay in self.overlays.values():
+                        overlay.restrict_categories(self.store.current)
 
     def _build_shell(self):
         root = QWidget()
@@ -700,7 +704,7 @@ class MainWindow(QMainWindow):
         section.addWidget(text("Click-through overlays are excluded from supported capture paths. Protection stops if Windows cannot exclude them.", "muted"))
         layout.addWidget(frame)
         frame, section = card("About Veil")
-        section.addWidget(text("Windows edition · Version 0.5", "muted"))
+        section.addWidget(text("Windows edition · Version 0.6", "muted"))
         section.addWidget(text("Independent desktop app with local detection. Preferences and bounded diagnostic logs are stored in %APPDATA%\\Veil.", "muted"))
         layout.addWidget(frame)
 
@@ -759,6 +763,7 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self._worker_finished)
         self.worker.start()
         self.frames, self.last_ms = 0, 0
+        self.detection_counts.clear()
         self.scan_feedback = "Measuring scan rate…"
         self.status = "Starting local detector…"
         self.show_page("Home")
@@ -806,13 +811,29 @@ class MainWindow(QMainWindow):
 
     def _capture_result(self):
         worker = self.sender()
-        if worker is not self.worker:
+        if worker is None or worker is not self.worker:
             return
         result = worker.take_result()
         if result is None:
             return
-        results, frames, elapsed, settings, timing = result
-        self.frames, self.last_ms = frames, elapsed
+        if worker.obsolete(result.revision):
+            return
+        results, settings = result.monitors, worker.current_settings()
+        self.frames = result.frames
+        if result.complete:
+            self.last_ms = result.elapsed
+            self._scan_feedback(result.timing, settings)
+        for monitor_id, boxes, patches, size, captured_at in results:
+            if monitor_id in self.overlays:
+                self.overlays[monitor_id].update_result(boxes, patches, size, settings, captured_at)
+                self.detection_counts[monitor_id] = len(boxes)
+        count = sum(self.detection_counts.values())
+        self.status = (f"Blocking · {count} detections" if count else "Scanning · no selected categories detected")
+        if settings["style"] == "Outline":
+            self.status += " · outline only, content remains visible"
+        self._refresh_status()
+
+    def _scan_feedback(self, timing, settings):
         rate = (f"{timing.scans_per_second:.1f} scans/sec" if timing.scans_per_second is not None
                 else "Measuring scan rate…")
         self.scan_feedback = f"{rate} · {timing.work_ms:.0f} ms average scan work"
@@ -820,18 +841,9 @@ class MainWindow(QMainWindow):
             self.scan_feedback += " · fastest mode uses the most scanning time"
         elif timing.work_ms > settings["scan_interval_ms"]:
             self.scan_feedback += " · scan time exceeds your interval; rate is limited"
-        count = 0
-        for monitor_id, boxes, patches, size, captured_at in results:
-            if monitor_id in self.overlays:
-                self.overlays[monitor_id].update_result(boxes, patches, size, settings, captured_at)
-                count += len(boxes)
-        self.status = (f"Blocking · {count} detections" if count else "Scanning · no selected categories detected")
-        if settings["style"] == "Outline":
-            self.status += " · outline only, content remains visible"
-        self._refresh_status()
 
     def _capture_failed(self, message):
-        if self.sender() is not self.worker:
+        if self.sender() is None or self.sender() is not self.worker:
             return
         self.stop_protection()
         self.status = message
@@ -855,6 +867,7 @@ class MainWindow(QMainWindow):
             overlay.hide()
             overlay.deleteLater()
         self.overlays.clear()
+        self.detection_counts.clear()
         self.status = "Protection stopped"
         self.scan_feedback = "Start blocking to measure the actual scan rate."
         self._refresh_status()
@@ -863,6 +876,8 @@ class MainWindow(QMainWindow):
 
     def _worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self.worker:
             self.stop_protection()
         if worker in self.retired_workers:

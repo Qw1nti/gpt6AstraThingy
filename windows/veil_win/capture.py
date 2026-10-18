@@ -2,25 +2,39 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
 import logging
+import math
 import time
 from threading import Event, Lock
 
 from PIL import Image
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QTimer
-from PySide6.QtGui import QImage, QPainter, QColor, QPen
+from PySide6.QtGui import QPainter, QColor, QPen, QRegion
 from PySide6.QtWidgets import QWidget
 
-from .core import Detector, Box, censor_image
-from .scanning import ScanMeter, scan_delay
+from .core import Detector
+from .effects import PatchRenderer, qimage
+from .scanning import ScanMeter, ScanTiming, scan_delay
 from .tracking import MotionTracker
 
 LOG = logging.getLogger(__name__)
 
 
-def qimage(image: Image.Image) -> QImage:
-    rgb = image.convert("RGB")
-    return QImage(rgb.tobytes(), rgb.width, rgb.height, rgb.width * 3, QImage.Format.Format_RGB888).copy()
+def policy(settings):
+    return tuple((key, tuple(value) if isinstance(value, list) else value)
+                 for key, value in sorted(settings.items()) if key not in ("scan_interval_ms", "monitor"))
+
+
+@dataclass
+class CaptureBatch:
+    monitors: list
+    frames: int
+    elapsed: int
+    settings: dict
+    timing: ScanTiming
+    revision: int = 0
+    complete: bool = True
 
 
 class CaptureThread(QThread):
@@ -32,15 +46,29 @@ class CaptureThread(QThread):
         self.settings = dict(settings)
         self.monitor_ids = monitor_ids
         self.stop_event = Event()
+        self.wake_event = Event()
         self.lock = Lock()
         self.latest = None
         self.notification_pending = False
         self.reload_custom = False
+        self.revision = 0
 
     def set_settings(self, settings, *, reload_custom=False):
         with self.lock:
+            if policy(settings) != policy(self.settings) or reload_custom:
+                self.revision += 1
+                self.latest = None
             self.settings = dict(settings)
             self.reload_custom = self.reload_custom or reload_custom
+        self.wake_event.set()
+
+    def current_settings(self):
+        with self.lock:
+            return dict(self.settings)
+
+    def obsolete(self, revision):
+        with self.lock:
+            return self.stop_event.is_set() or revision != self.revision
 
     def take_result(self):
         with self.lock:
@@ -50,6 +78,15 @@ class CaptureThread(QThread):
 
     def publish(self, result):
         with self.lock:
+            if result.revision != self.revision:
+                return
+            if self.latest is not None:
+                # Retain one newest result per display, even if the UI is busy.
+                merged = {item[0]: item for item in self.latest.monitors}
+                merged.update({item[0]: item for item in result.monitors})
+                result.monitors = list(merged.values())
+                if self.latest.complete and not result.complete:
+                    result.elapsed, result.timing, result.complete = self.latest.elapsed, self.latest.timing, True
             self.latest = result
             notify = not self.notification_pending
             self.notification_pending = True
@@ -58,26 +95,32 @@ class CaptureThread(QThread):
 
     def stop(self):
         self.stop_event.set()
+        self.wake_event.set()
 
     def run(self):
         import mss
         try:
             detector = Detector()
+            renderer = PatchRenderer()
             custom_path, custom = None, None
             frames = 0
             meter, previous_interval = ScanMeter(), None
+            timing = ScanTiming(0, None)
             with mss.mss() as screen:
                 LOG.info("Capture started: monitors=%s rectangles=%s", self.monitor_ids,
                          [screen.monitors[i] for i in self.monitor_ids])
                 while not self.stop_event.is_set():
+                    self.wake_event.clear()
                     with self.lock:
-                        settings = dict(self.settings)
+                        settings, revision = dict(self.settings), self.revision
                         if self.reload_custom:
                             custom_path = None
                             self.reload_custom = False
+                    cancelled = lambda: self.obsolete(revision)
                     interval_ms = settings["scan_interval_ms"]
                     if interval_ms != previous_interval:
                         meter, previous_interval = ScanMeter(), interval_ms
+                        timing = ScanTiming(0, None)
                     path = settings["custom_image"] if settings["style"] == "Custom image" else ""
                     if path != custom_path:
                         custom_path, custom = path, None
@@ -87,32 +130,33 @@ class CaptureThread(QThread):
                                     custom = file.convert("RGB")
                             except (OSError, ValueError):
                                 LOG.exception("Custom mask unavailable; using solid coverage")
+                    # Model initialization must not age the first captured frame.
+                    detector.prepare(settings, cancelled=cancelled)
+                    if cancelled():
+                        continue
                     started = time.monotonic()
-                    results = []
-                    for monitor_id in self.monitor_ids:
-                        if self.stop_event.is_set():
+                    for index, monitor_id in enumerate(self.monitor_ids):
+                        if cancelled():
                             break
                         monitor = screen.monitors[monitor_id]
-                        shot = screen.grab(monitor)
                         captured_at = time.monotonic()
-                        # Decode BGRA directly; avoid MSS's additional full-frame RGB buffer.
+                        shot = screen.grab(monitor)
                         frame = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-                        boxes = detector.detect(frame, settings, tiled=True, cancelled=self.stop_event.is_set)
-                        patches = []
-                        if settings["style"] in ("Mosaic", "Pixelated Blur", "Blur", "Custom image") and not settings["inverse"]:
-                            for box in boxes:
-                                rect = (box.left, box.top, box.right, box.bottom)
-                                part = frame.crop(rect)
-                                local = Box(0, 0, part.width, part.height, box.score, box.category)
-                                patches.append(qimage(censor_image(part, [local], settings, custom)))
-                        results.append((monitor_id, boxes, patches, frame.size, captured_at))
+                        boxes = detector.detect(frame, settings, tiled=True, cancelled=cancelled)
+                        if cancelled():
+                            break
+                        patches = renderer.render(frame, boxes, settings, custom)
+                        if cancelled():
+                            break
                         frames += 1
-                    if self.stop_event.is_set():
-                        break
-                    finished = time.monotonic()
-                    self.publish((results, frames, round((finished-started)*1000), settings,
-                                  meter.observe(started, finished)))
-                    self.stop_event.wait(scan_delay(interval_ms, time.monotonic()-started))
+                        finished = time.monotonic()
+                        complete = index == len(self.monitor_ids)-1
+                        if complete:
+                            timing = meter.observe(started, finished)
+                        # Deliver this screen before starting inference on the next.
+                        self.publish(CaptureBatch([(monitor_id, boxes, patches, frame.size, captured_at)],
+                                     frames, round((finished-started)*1000), settings, timing, revision, complete))
+                    self.wake_event.wait(scan_delay(interval_ms, time.monotonic()-started))
         except Exception as exc:
             LOG.exception("Capture failed")
             self.failure.emit(f"Protection stopped: {type(exc).__name__}: {exc}")
@@ -134,8 +178,11 @@ class Overlay(QWidget):
         self.settings = {}
         self.tracker = MotionTracker()
         self.tracking_key = None
+        self.last_received = None
+        self.result_period = 0
         self.motion_timer = QTimer(self)
-        self.motion_timer.setInterval(33)
+        self.motion_timer.setInterval(16)
+        self.motion_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.motion_timer.timeout.connect(self._animate)
 
     def activate(self):
@@ -163,32 +210,72 @@ class Overlay(QWidget):
         LOG.info("Overlay activated: handle=%s geometry=%s DPR=%s", hwnd, self.geometry(), self.devicePixelRatioF())
 
     def update_result(self, boxes, patches, source_size, settings, captured_at=None):
+        old_boxes = self.boxes
         key = (source_size, tuple(settings["categories"]), settings["coverage"], settings["confidence"],
                settings["style"], settings["inverse"], settings["pixel_size"], settings["custom_image"],
                settings["color"], settings["border_color"], settings["label"], settings.get("motion_prediction", True))
-        if key != self.tracking_key:
+        reset = key != self.tracking_key
+        if reset:
             self.tracker, self.tracking_key = MotionTracker(), key
+            self.last_received, self.result_period = None, 0
         self.source_size, self.settings = source_size, dict(settings)
+        now = time.monotonic()
+        if self.last_received is not None:
+            period = max(0, now-self.last_received)
+            # Respond to a slow cycle immediately, recover gradually afterward.
+            self.result_period = max(period, self.result_period*.8)
+        self.last_received = now
         if settings.get("motion_prediction", True):
-            now = time.monotonic()
             self.tracker.update(boxes, patches, now if captured_at is None else captured_at,
                                 now, source_size, self._hold_time())
             self.boxes, self.patches = self.tracker.render(now, source_size, self._hold_time())
-            self.motion_timer.start()
+            if self.tracker.tracks:
+                self.motion_timer.start()
         else:
             self.motion_timer.stop()
             self.boxes, self.patches = boxes, patches
-        self.update()
+        self._repaint(old_boxes, reset)
 
     def _hold_time(self):
-        return max(.30, min(.60, self.settings.get("scan_interval_ms", 150)/1000*1.5))
+        period = max(self.settings.get("scan_interval_ms", 150)/1000, self.result_period)
+        return max(.30, min(1.50, period*1.5))
+
+    def _box_rect(self, box):
+        sx, sy = self.width()/self.source_size[0], self.height()/self.source_size[1]
+        left, top = math.floor(box.left*sx), math.floor(box.top*sy)
+        right, bottom = math.ceil(box.right*sx), math.ceil(box.bottom*sy)
+        return QRect(left, top, max(1, right-left), max(1, bottom-top))
+
+    def _repaint(self, old_boxes, full=False):
+        if full:
+            self.update()
+            return
+        dirty = QRegion()
+        for box in old_boxes + self.boxes:
+            dirty |= QRegion(self._box_rect(box).adjusted(-3, -3, 3, 3))
+        if not dirty.isEmpty():
+            self.update(dirty)
+
+    def restrict_categories(self, settings):
+        """Remove disabled categories immediately, including held tracks."""
+        categories = set(settings["categories"])
+        def allowed(box):
+            selected = box.category in categories or (box.category == 1 and 12 in categories)
+            return selected and box.score >= settings["confidence"]/100
+        old_boxes = self.boxes
+        kept = [index for index, box in enumerate(self.boxes) if allowed(box)]
+        self.boxes = [self.boxes[index] for index in kept]
+        self.patches = [self.patches[index] if index < len(self.patches) else None for index in kept]
+        self.tracker.tracks = [track for track in self.tracker.tracks if allowed(track.box)]
+        self._repaint(old_boxes)
 
     def _animate(self):
         boxes, patches = self.tracker.render(time.monotonic(), self.source_size, self._hold_time())
         changed = boxes != self.boxes
+        old_boxes = self.boxes
         self.boxes, self.patches = boxes, patches
         if changed:
-            self.update()
+            self._repaint(old_boxes)
         if not self.tracker.tracks:
             self.motion_timer.stop()
 
@@ -200,6 +287,12 @@ class Overlay(QWidget):
         if not self.settings:
             return
         painter = QPainter(self)
+        painter.setClipRegion(event.region())
+        # Explicitly erase the dirty alpha region, including old mask positions.
+        # Translucent top-level windows may have WA_NoSystemBackground set.
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         sx = self.width()/self.source_size[0]
         sy = self.height()/self.source_size[1]
         color = QColor(self.settings["color"])
@@ -215,9 +308,11 @@ class Overlay(QWidget):
             painter.end()
             return
         for index, box in enumerate(self.boxes):
-            x, y = box.left*sx, box.top*sy
-            w, h = (box.right-box.left)*sx, (box.bottom-box.top)*sy
-            rect = (round(x), round(y), round(w), round(h))
+            target = self._box_rect(box)
+            if not event.region().intersects(target.adjusted(-3, -3, 3, 3)):
+                continue
+            x, y, w, h = target.x(), target.y(), target.width(), target.height()
+            rect = (x, y, w, h)
             style = self.settings["style"]
             if style in ("Mosaic", "Pixelated Blur", "Blur", "Custom image") and index < len(self.patches) and self.patches[index] is not None:
                 painter.drawImage(QRect(*rect), self.patches[index])
@@ -227,6 +322,9 @@ class Overlay(QWidget):
                 painter.setPen(QPen(QColor(self.settings["border_color"]), 3))
                 painter.drawRect(round(x), round(y), max(1, round(w)-1), max(1, round(h)-1))
             if style == "Labeled":
+                painter.save()
+                painter.setClipRect(target, Qt.ClipOperation.IntersectClip)
                 painter.setPen(Qt.GlobalColor.white)
                 painter.drawText(round(x)+8, round(y)+22, self.settings["label"][:32])
+                painter.restore()
         painter.end()

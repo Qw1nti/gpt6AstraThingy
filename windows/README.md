@@ -2,7 +2,7 @@
 
 An independent Windows desktop implementation with local visual detection. Version 0.5 replaces the original black/red interface with Windows 11 Fluent-inspired styling: light/dark surfaces, a blue accent, Segoe typography, rounded cards and a persistent navigation pane. Veil uses its own name, code, and artwork. The original commercial application is not bundled or required.
 
-## Current scope (0.5)
+## Current scope (0.6)
 
 - Local NudeNet 320n ONNX inference, using the same pinned model acquisition as the Android project.
 - Dedicated, checksum-pinned YuNet ONNX face detection with rectangular inputs retaining native detail up to a 2560-pixel longest edge.
@@ -14,6 +14,11 @@ An independent Windows desktop implementation with local visual detection. Versi
 - Live style/category/confidence changes, a three-second overlay test, and bounded local diagnostics.
 - Live scan-interval slider, measured scan rate and average scan work, with feedback when scan time exceeds the chosen interval.
 - Capture-time motion prediction, animated masks between scans and brief tolerance for missed detections, with a Settings switch.
+
+Version 0.6 retains the approved interface and optimizes scan delivery, live
+effects, inference buffers and crowded tracking. It fixes stale settings results
+and masks expiring between slow scans. See the [pipeline review and measured
+limits](PERFORMANCE.md) for reproducible component benchmarks and tradeoffs.
 
 ## Windows 11 interface
 
@@ -62,18 +67,18 @@ runs both models; use Home's measured work/rate to compare on your PC.
 
 **Motion prediction** is enabled by default in Settings. It associates recent
 boxes using position, size and category, estimates velocity using capture
-timestamps, and repaints masks about every 33 ms without running extra inference.
+timestamps, and updates moving mask areas about every 16 ms without running extra inference.
 Prediction is limited to 120 ms and at most one box edge or 128 pixels per axis.
-Missed boxes remain for 300–600 ms after their last result, depending on the scan
-interval, then expire. Settings changes clear old tracks; an entirely unmatched
+Missed boxes remain for 300–1500 ms after their last result, depending on the scan
+interval and observed cadence, then expire. Policy changes clear old tracks; an entirely unmatched
 set of new detections clears old positions. A blank scene can retain a mask
 briefly until expiry. Blur/pixelated patches use the last captured texture while
 moving between scans. Outline mode still only marks regions.
 
 Prediction cannot anticipate the first appearance of a face, and rapid changes
 of direction or scene cuts can still cause errors. Turn it off if masks drift.
-Very slow scan intervals may outlast the hold window; prediction is not a
-substitute for fresh detections. Higher scan rates cannot recover detail lost
+Passes slower than the bounded hold window can still leave gaps; prediction is
+not a substitute for fresh detections. Higher scan rates cannot recover detail lost
 by the old model's input resolution.
 
 ## Scan speed and pixelated blur

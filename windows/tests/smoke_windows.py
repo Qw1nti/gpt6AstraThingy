@@ -113,10 +113,19 @@ try:
     assert window.worker is worker, "Changing scan rate or pixelation restarted detection"
     until(lambda: "scans/sec" in window.scan_feedback)
     print("Measured Windows runner timing (not owner PC):", window.scan_feedback)
+    window.scan_interval_slider.setValue(1000)
+    until(lambda: any(o.boxes and o.settings["scan_interval_ms"] == 1000 for o in window.overlays.values()))
+    deadline = time.monotonic()+.75
+    while time.monotonic() < deadline:
+        app.processEvents()
+        assert any(o.boxes for o in window.overlays.values()), "Masks expired between slow scans"
+        time.sleep(.02)
+    print("Native masks remained visible between scans at the 1000ms setting.")
+    window.scan_interval_slider.setValue(250)
     target.setPixmap(QPixmap.fromImage(qimage(Image.new("RGB", (width, height), "#888888"))))
     until(lambda: all(not o.boxes for o in window.overlays.values()), seconds=5)
     print("Native Windows pipeline passed: mapping, visible window, click-through styles, "
-          "capture exclusion, small moving faces, rendered pixels, prediction expiry, live interval and pixelated blur.")
+          "capture exclusion, small moving faces, rendered pixels, prediction expiry, slow-scan continuity, live interval and pixelated blur.")
 finally:
     window.stop_protection()
     until(lambda: not window.retired_workers)

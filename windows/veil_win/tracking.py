@@ -1,5 +1,6 @@
 """Short-lived box association and bounded motion extrapolation, without identity recognition."""
 from dataclasses import dataclass
+from collections import defaultdict
 import math
 
 from .core import Box, overlap
@@ -23,6 +24,8 @@ def center(box):
 
 
 def project(track, at, width, height):
+    if track.vx == 0 and track.vy == 0:
+        return track.box
     dt = min(PREDICTION_HORIZON, max(0, at-track.observed))
     max_shift = min(128, max(track.box.right-track.box.left, track.box.bottom-track.box.top))
     dx = max(-max_shift, min(max_shift, track.vx*dt))
@@ -43,15 +46,25 @@ class MotionTracker:
         self.last_observation = observed
         self.tracks = [track for track in self.tracks if received-track.received <= ttl]
         candidates = []
+        # Every association gate is <=128px. Search neighboring cells rather
+        # than pairing every old track with every detection in crowded scenes.
+        cells = defaultdict(list)
+        features = []
+        for new_index, box in enumerate(boxes):
+            nc = center(box)
+            edge = max(box.right-box.left, box.bottom-box.top, 1)
+            features.append((nc, edge))
+            cells[(box.category, math.floor(nc[0]/128), math.floor(nc[1]/128))].append(new_index)
         for old_index, track in enumerate(self.tracks):
             predicted = project(track, observed, *size)
             pc = center(predicted)
-            for new_index, box in enumerate(boxes):
-                if box.category != track.box.category:
-                    continue
-                nc = center(box)
+            gx, gy = math.floor(pc[0]/128), math.floor(pc[1]/128)
+            nearby = (index for x in range(gx-1, gx+2) for y in range(gy-1, gy+2)
+                      for index in cells.get((track.box.category, x, y), ()))
+            for new_index in nearby:
+                box = boxes[new_index]
+                nc, edge = features[new_index]
                 distance = math.hypot(nc[0]-pc[0], nc[1]-pc[1])
-                edge = max(box.right-box.left, box.bottom-box.top, 1)
                 old_edge = max(track.box.right-track.box.left, track.box.bottom-track.box.top, 1)
                 dt = observed-track.observed
                 gate = min(128, max(40, edge*1.2, dt*500))

@@ -66,7 +66,13 @@ class FaceDetector:
         scaled = rgb if scale == 1 else rgb.resize((max(1, round(width*scale)), max(1, round(height*scale))), Image.Resampling.BILINEAR)
         input_width, input_height = (int(np.ceil(dim/32))*32 for dim in scaled.size)
         # Fill contiguous NCHW directly, without a second full float32 frame.
-        data = np.zeros((1, 3, input_height, input_width), dtype=np.float32)
+        shape = (1, 3, input_height, input_width)
+        if getattr(self, "data", None) is None or self.data.shape != shape:
+            self.data = np.zeros(shape, dtype=np.float32)
+        elif self.scaled_size != scaled.size:
+            self.data.fill(0)  # Clear old content if a new size shares the padded shape.
+        self.scaled_size = scaled.size
+        data = self.data
         data[0, :, :scaled.height, :scaled.width] = np.asarray(scaled)[:, :, ::-1].transpose(2, 0, 1)
         outputs = dict(zip(self.names, self.session.run(None, {self.input_name: data})))
         return decode_faces(outputs, width, height, input_width, scaled.width, scaled.height, threshold)

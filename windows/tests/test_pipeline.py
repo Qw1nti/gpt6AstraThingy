@@ -8,7 +8,7 @@ from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QRect
 from veil_win.app import MainWindow
-from veil_win.capture import CaptureThread, Overlay, qimage
+from veil_win.capture import CaptureThread, CaptureBatch, Overlay, qimage
 from veil_win.core import Box
 from veil_win.displays import match_screens
 from veil_win.settings import DEFAULT
@@ -33,11 +33,12 @@ class PipelineTests(unittest.TestCase):
         worker = CaptureThread(DEFAULT, [1])
         notices = []
         worker.result.connect(lambda: notices.append(True))
-        worker.publish(("old",))
-        worker.publish(("new",))
+        worker.publish(CaptureBatch([], 1, 0, DEFAULT, ScanTiming(0, None)))
+        latest = CaptureBatch([], 2, 0, DEFAULT, ScanTiming(0, None))
+        worker.publish(latest)
         self.assertEqual(len(notices), 1)
-        self.assertEqual(worker.take_result(), ("new",))
-        worker.publish(("next",))
+        self.assertIs(worker.take_result(), latest)
+        worker.publish(CaptureBatch([], 3, 0, DEFAULT, ScanTiming(0, None)))
         self.assertEqual(len(notices), 2)
 
     def test_stale_worker_cannot_update_or_stop_new_session(self):
@@ -47,12 +48,12 @@ class PipelineTests(unittest.TestCase):
             window.worker = current
             old.result.connect(window._capture_result)
             old.failure.connect(window._capture_failed)
-            old.publish(([], 999, 0, DEFAULT, ScanTiming(0, None)))
+            old.publish(CaptureBatch([], 999, 0, DEFAULT, ScanTiming(0, None)))
             old.failure.emit("Old failure")
             self.assertIs(window.worker, current)
             self.assertEqual(window.frames, 0)
             current.result.connect(window._capture_result)
-            current.publish(([], 2, 5, DEFAULT, ScanTiming(5, 6.7)))
+            current.publish(CaptureBatch([], 2, 5, DEFAULT, ScanTiming(5, 6.7)))
             self.assertEqual(window.frames, 2)
             self.assertIn("no selected categories", window.status)
             window.worker = None
@@ -80,7 +81,7 @@ class PipelineTests(unittest.TestCase):
             worker = CaptureThread({**DEFAULT, "scan_interval_ms": 50}, [1])
             window.worker = worker
             worker.result.connect(window._capture_result)
-            worker.publish(([], 3, 120, worker.settings, ScanTiming(120, 8)))
+            worker.publish(CaptureBatch([], 3, 120, worker.settings, ScanTiming(120, 8)))
             self.assertIn("8.0 scans/sec", window.home_scan_feedback.text())
             self.assertIn("rate is limited", window.home_scan_feedback.text())
             window.worker = None
