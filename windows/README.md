@@ -105,6 +105,9 @@ Video export, screen recording, OBS virtual camera, achievements, animations, la
 
 ## Download on Windows
 
+Current [version 0.5 portable build](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563/artifacts/12122227653).
+Close any running Veil instance before updating. Your settings remain under `%APPDATA%\Veil`.
+
 Open a successful [Windows workflow run](https://github.com/Qw1nti/gpt6AstraThingy/actions/workflows/windows.yml), download **Veil-Windows-portable**, extract the ZIP, then run `VeilWindows.exe` inside the extracted folder. Keep all extracted files together. GitHub sign-in may be required to download the artifact. Windows may warn about an unsigned test executable.
 
 Requires 64-bit Windows 10 version 2004 or newer. Try a harmless static image first. Use the Home button to stop protection. Test overlay alignment and video behavior on the actual PC, especially with mixed DPI or multiple monitors.
@@ -158,5 +161,22 @@ work with a requested 250 ms interval (4 scans/sec), not an owner-PC benchmark.
 Actual video accuracy, end-to-end latency, CPU load, mixed-DPI hardware and
 sustained performance still need testing on the owner's PC. Android runtime
 source remains unchanged.
+
+Version 0.5, validated on 2026-10-18 UTC: 39 regression checks passed locally
+and on the Windows runner, including theme persistence without restarting
+capture, keyboard controls, contextual style controls, compact navigation and
+photo/outline status across page changes. All six pages fit without horizontal
+scrolling at 820×600 and 1120×780 in both modes. Local Qt renders were also
+reviewed at 150% scale. The Windows runner rendered 36 UI review images using
+the native Windows Qt plugin; representative Home, Detection, Appearance and
+Settings images were visually inspected with Windows fonts.
+The [Windows workflow](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563)
+also passed real model inference, the native moving-face capture/overlay test
+and portable packaging of code commit `a791143`.
+[Download version 0.5](https://github.com/Qw1nti/gpt6AstraThingy/actions/runs/39089516563/artifacts/12122227653).
+Detection, tracking and overlay-rendering source were not changed. Actual
+Windows 11 system-theme changes, title-bar/Snap behavior, mixed-DPI monitors,
+accessibility tools and ordinary use still need owner-PC testing; this is not
+a claim of exact WinUI parity or a new performance benchmark.
 
 Preferences, an imported custom mask and bounded diagnostic logs (256 KB each, two backups) are saved under `%APPDATA%\Veil`. Logs record operational errors and display geometry. Captured frames and source photos are not saved automatically. The Windows app does not use a browser or make network requests at runtime.
