@@ -31,6 +31,7 @@ jobs:
           $env:PYTHONPATH = 'windows'
           python -m unittest discover -s windows/tests -p 'test_*.py' -v
           python windows/tests/smoke_ui.py
+          python windows/tests/review_ui.py --native --output ui-review
       - name: Fetch pinned local model
         run: |
           python scripts/fetch_model.py
@@ -59,4 +60,10 @@ jobs:
         with:
           name: Veil-Windows-portable
           path: dist/VeilWindows/
+          if-no-files-found: error
+      - name: Upload UI review images
+        uses: actions/upload-artifact@v4
+        with:
+          name: Veil-Windows-UI-review
+          path: ui-review/
           if-no-files-found: error

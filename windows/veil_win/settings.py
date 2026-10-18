@@ -42,9 +42,12 @@ class SettingsStore:
         self.path = path or config_path()
         self.profiles = {"Default": dict(DEFAULT)}
         self.active = "Default"
+        self.appearance = "System"
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
+                if data.get("appearance") in ("System", "Light", "Dark"):
+                    self.appearance = data["appearance"]
                 profiles = data.get("profiles", {})
                 for name, settings in profiles.items():
                     if isinstance(name, str) and isinstance(settings, dict):
@@ -62,7 +65,8 @@ class SettingsStore:
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps({"active": self.active, "profiles": self.profiles}, indent=2), encoding="utf-8")
+        temp.write_text(json.dumps({"active": self.active, "profiles": self.profiles,
+                                    "appearance": self.appearance}, indent=2), encoding="utf-8")
         temp.replace(self.path)
 
     def update(self, **changes):

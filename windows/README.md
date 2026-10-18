@@ -1,8 +1,8 @@
 # Veil for Windows
 
-An independent Windows desktop implementation with local visual detection. Its dark interface follows the public Windows reference: black backgrounds, charcoal cards, thin borders, and red controls. Veil uses its own name, code, and artwork. The original commercial application is not bundled or required.
+An independent Windows desktop implementation with local visual detection. Version 0.5 replaces the original black/red interface with Windows 11 Fluent-inspired styling: light/dark surfaces, a blue accent, Segoe typography, rounded cards and a persistent navigation pane. Veil uses its own name, code, and artwork. The original commercial application is not bundled or required.
 
-## Current scope (0.4)
+## Current scope (0.5)
 
 - Local NudeNet 320n ONNX inference, using the same pinned model acquisition as the Android project.
 - Dedicated, checksum-pinned YuNet ONNX face detection with rectangular inputs retaining native detail up to a 2560-pixel longest edge.
@@ -15,9 +15,39 @@ An independent Windows desktop implementation with local visual detection. Its d
 - Live scan-interval slider, measured scan rate and average scan work, with feedback when scan time exceeds the chosen interval.
 - Capture-time motion prediction, animated masks between scans and brief tolerance for missed detections, with a Settings switch.
 
+## Windows 11 interface
+
+Home puts blocking status, the start/stop action and scan frequency first, with
+quick links to display selection, detection categories, appearance and the
+three-second overlay test. A running session keeps its status in the navigation
+pane while you visit other pages. At compact widths, navigation becomes an icon
+rail with tooltips and accessible names. Help and Settings stay at the bottom.
+
+| Earlier page | Current page | Purpose |
+| --- | --- | --- |
+| Body Parts | Detection | Profiles, faces, body categories and reverse censoring |
+| Censor Styles | Appearance | Six effects, illustrated preview and relevant controls |
+| Export | Photos | Import, inspect and save a processed image |
+
+In **Settings → App theme**, choose **Use system setting** (the default),
+**Light** or **Dark**. This is an app-wide preference, independent of detection
+profiles. It does not change censor colors, selected categories, scan frequency
+or a running worker. Existing preferences and custom masks remain compatible.
+System mode uses the Windows app color preference, with Qt's scheme as a fallback.
+
+The interface uses the existing PySide6 framework, with Fluent-inspired controls,
+keyboard-operable checkboxes/switches, native file/color dialogs and the real
+Windows title bar. It does not use WinUI or claim Mica/Acrylic backdrops. Windows
+11 can supply rounded window corners; Windows 10 retains its system frame.
+Detection, tracking and overlay rendering source are unchanged in this redesign.
+
+Design references: [Windows typography](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography),
+[app settings](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings),
+and [window corners](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-rounded-corners).
+
 ## Small faces and motion
 
-On **Body Parts**, enable **Faces (all people)**. The detector covers faces
+On **Detection**, enable **Detect faces**. The detector covers faces
 without assigning gender. Old profiles with either face category enabled migrate
 to this combined selection; other filters stay selected. **Use faces only** is
 an explicit shortcut that clears body filters and skips body-model inference.
@@ -66,9 +96,9 @@ ms, compare your normal game/video performance, then try shorter intervals.
 Use 250–500 ms if other work stutters. Fastest uses the most scanning time.
 Sustained tests on the owner's PC are still needed to determine a suitable rate.
 
-Choose **Pixelated Blur** under Censor Styles for block pixelation, adjustable
+Choose **Pixelate** under Appearance for block pixelation, adjustable
 block size and a colored border; **Blur** remains the smooth blur effect. The old
-Mosaic style migrates to Pixelated Blur, retaining its block size, border color
+Mosaic style migrates to Pixelated Blur (displayed as Pixelate), retaining its block size, border color
 and coverage. Live effects, previews and photo export share this rendering.
 
 Video export, screen recording, OBS virtual camera, achievements, animations, language packs, and GPU acceleration are not implemented. No performance or exact visual-parity claim is made. In particular, detection is asynchronous and cannot guarantee that content is hidden before it appears. Protected video, exclusive fullscreen surfaces and secure desktops may not be captured.
@@ -82,7 +112,7 @@ Requires 64-bit Windows 10 version 2004 or newer. Try a harmless static image fi
 ## Blocking is on but nothing is covered
 
 1. Press **Test overlay (3 seconds)** on Home. A labeled red rectangle should appear on each selected display. This stops an existing blocking session; press **Start Blocking** afterward.
-2. For a harmless detection test, enable **Faces (all people)** on Body Parts and display a clear portrait. **Use faces only** skips the body model. Faces are not enabled by default; the default categories cover exposed nudity.
+2. For a harmless detection test, enable **Detect faces** on Detection and display a clear portrait. **Use faces only** skips the body model. Faces are not enabled by default; the default categories cover exposed nudity.
 3. Check Home: increasing frame counts with **Scanning · no selected categories detected** mean inference is running but has found no selected matches. Lower confidence if appropriate. **Outline** marks regions without covering their content.
 4. If the rectangle is invisible, alignment is wrong, or protection stops, check `%APPDATA%\Veil\diagnostics.log` for errors. Changing display layout or scaling stops protection; restart it to recreate aligned overlays.
 
